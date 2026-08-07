@@ -14,6 +14,7 @@ from curl_cffi import requests as curl_requests
 from ...application.dto import WebFeed
 from ...domain.exceptions import WebError
 from ..utils import get_logger
+from .rss.document_parser import FeedDocumentParser
 
 logger = get_logger()
 
@@ -140,6 +141,26 @@ class CurlFetcher:
                     log_level=log_level,
                 )
                 return ret
+
+            # Parse RSS/Atom/JSON Feed content into rss_d (same as RSSFeedFetcher)
+            parser = FeedDocumentParser()
+            rss_d, parse_error, base_error = parser.parse_feedparser_dict(
+                response.content,
+                fallback_title=ret.url,
+            )
+            if parse_error:
+                ret.error = WebError(
+                    error_name=parse_error,
+                    url=ret.url,
+                    base_error=base_error,
+                    log_level=40 if parse_error == "feed parse error" else log_level,
+                )
+                return ret
+
+            if rss_d is not None:
+                ret.rss_d = rss_d
+
+            return ret
 
         except Exception as e:
             error_name = "curl_cffi error"
