@@ -83,10 +83,19 @@ from .src.infrastructure.utils import (
     get_plugin_cache_dir,
     get_plugin_data_dir,
 )
+from .src.infrastructure.utils.chromium_deps import ensure_chromium_deps
 from .src.infrastructure.utils.media_integrity import configure_media_integrity
 from .src.interfaces import WebApiHandler
 
 logger = get_logger()
+
+
+async def _ensure_chromium_deps() -> None:
+    """启动时确保 CloakBrowser 的 Chromium 系统依赖已安装。"""
+    try:
+        await ensure_chromium_deps()
+    except Exception as exc:
+        logger.warning("Chromium 依赖检查/安装失败（不影响启动）: %s", exc)
 
 
 def _build_fetcher_factory() -> (
@@ -165,6 +174,7 @@ async def create_plugin_runtime(
     queue: SessionPushQueue | None = None
     try:
         plugin_config, app_settings = _init_config(config)
+        await _ensure_chromium_deps()
         _schedule_table_font(app_settings)
         await _configure_ffmpeg_bundler(app_settings)
         _configure_message_senders(app_settings)

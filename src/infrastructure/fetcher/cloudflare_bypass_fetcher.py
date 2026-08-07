@@ -156,7 +156,14 @@ class CloudflareBypassFetcher:
         """
         domain = CfCookieStore.extract_domain(url)
         try:
-            from cloakbrowser import launch_async
+            try:
+                from cloakbrowser import launch_async
+            except ImportError:
+                logger.warning(
+                    "检测到 Cloudflare JS 挑战，但未安装 cloakbrowser。"
+                    "如需自动绕过，请运行: pip install cloakbrowser"
+                )
+                return None
 
             async with self._cloak_lock:
                 timeout_s = max(10, int(timeout or self.timeout))

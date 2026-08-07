@@ -1,5 +1,21 @@
 # 兼容性说明
 
+## Cloudflare 防护绕过
+
+- RSS 抓取默认使用三级自动降级链路：**aiohttp → curl_cffi → CloakBrowser**。
+  - aiohttp 直接成功时返回；返回 Cloudflare 挑战页时升级到 curl_cffi。
+  - curl_cffi 模拟浏览器 TLS 指纹，能绕过大部分仅做 TLS 指纹检测的防护。
+  - 仍命中 JS 挑战时，若已安装 `cloakbrowser`，插件会用无头 Chromium 自动完成挑战，
+    并把 `cf_clearance` cookie 按域名缓存到本地（`plugin_data/cache/cf_cookies/`），
+    后续同域名轮询直接复用缓存，不再启动浏览器。
+- `cloakbrowser` 为**可选依赖**（体积约 200MB，含 Chromium 二进制），未安装时静默降级为
+  aiohttp → curl_cffi 两层。需要完整 JS 挑战绕过能力时手动安装：
+  ```bash
+  pip install cloakbrowser
+  ```
+- 首次在精简 Docker 镜像（如 `python:3.12-slim`）中运行时，插件会自动检测并安装
+  Chromium 缺失的系统库（Debian 包），安装过程在后台进行、不阻塞插件启动。
+
 ## RSS 解析
 
 - RSS 解析优先读取 `content` 结构化正文，并兼容 `content:encoded` / `content_encoded` 字段。
