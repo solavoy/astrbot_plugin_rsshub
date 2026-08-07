@@ -288,6 +288,9 @@ def build_application_settings(config: Any) -> ApplicationSettings:
             )
             or _DEFAULT_MEDIA_TIMEOUT_SECONDS
         ),
+        cloudflare_bypass=str(
+            _get_value(http_cfg, "cloudflare_bypass", "disabled") or "disabled"
+        ),
     )
     basic = BasicSettings(
         proxy=http.proxy,

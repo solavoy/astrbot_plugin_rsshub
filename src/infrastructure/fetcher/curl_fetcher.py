@@ -1,0 +1,162 @@
+"""curl_cffi-based HTTP fetcher for Cloudflare bypass.
+
+Provides a FeedFetcher implementation that uses curl_cffi to impersonate
+real browser TLS fingerprints, bypassing Cloudflare's TLS-level bot detection.
+"""
+
+from __future__ import annotations
+
+import asyncio
+
+from curl_cffi.requests import AsyncSession
+from curl_cffi import requests as curl_requests
+
+from ...application.dto import WebFeed
+from ...domain.exceptions import WebError
+from ..utils import get_logger
+
+logger = get_logger()
+
+# Default browser impersonation string
+_DEFAULT_IMPERSONATE: str = "chrome120"
+
+# Feed-appropriate Accept header
+_FEED_ACCEPT: str = (
+    "application/rss+xml, application/rdf+xml, application/atom+xml, "
+    "application/feed+json, application/xml;q=0.9, text/xml;q=0.8, "
+    "application/json;q=0.7, text/*;q=0.7, application/*;q=0.6"
+)
+
+
+class CurlFetcher:
+    """HTTP fetch via curl_cffi with TLS fingerprint impersonation.
+
+    Drop-in for HttpFetcher in the FeedFetcher protocol, using curl_cffi's
+    AsyncSession to mimic real browser TLS/HTTP2 handshakes.
+    """
+
+    def __init__(
+        self,
+        timeout: int = 30,
+        proxy: str = "",
+        impersonate: str = _DEFAULT_IMPERSONATE,
+    ) -> None:
+        self.timeout = max(1, int(timeout or 30))
+        self.proxy = (proxy or "").strip()
+        self.impersonate = impersonate or _DEFAULT_IMPERSONATE
+        self._session: AsyncSession | None = None
+        self._session_lock: asyncio.Lock = asyncio.Lock()
+
+    async def close(self) -> None:
+        """Close the shared async session."""
+        async with self._session_lock:
+            if self._session is not None:
+                try:
+                    await self._session.close()
+                except Exception:
+                    pass
+                self._session = None
+
+    async def _get_session(self) -> AsyncSession:
+        """Get or create the shared AsyncSession."""
+        async with self._session_lock:
+            if self._session is None or self._session.closed:
+                self._session = AsyncSession(
+                    impersonate=self.impersonate,
+                    timeout=self.timeout,
+                    proxies={"http": self.proxy, "https": self.proxy}
+                    if self.proxy
+                    else None,
+                )
+        return self._session
+
+    async def fetch(
+        self,
+        url: str,
+        *,
+        timeout: float | None = None,
+        headers: dict[str, str] | None = None,
+        verbose: bool = True,
+        proxy: str | None = None,
+    ) -> WebFeed:
+        """Fetch a feed URL using curl_cffi with TLS impersonation.
+
+        Args:
+            url: Request URL
+            timeout: Request timeout in seconds, defaults to instance timeout
+            headers: Additional request headers
+            verbose: Whether to log detailed info
+            proxy: Temporary proxy override (not yet implemented for one-off)
+
+        Returns:
+            WebFeed with raw response content and metadata
+        """
+        ret = WebFeed(url=url, ori_url=url)
+        log_level = 30 if verbose else 10
+
+        _headers: dict[str, str] = {
+            "Accept": _FEED_ACCEPT,
+            "User-Agent": (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/120.0.0.0 Safari/537.36"
+            ),
+        }
+        if headers:
+            _headers.update(headers)
+
+        effective_timeout = timeout or self.timeout
+
+        try:
+            session = await self._get_session()
+
+            response: curl_requests.Response = await session.get(
+                url,
+                headers=_headers,
+                timeout=effective_timeout,
+            )
+
+            ret.content = response.content
+            ret.url = str(response.url)
+            ret.headers = dict(response.headers.items())
+            ret.status = response.status_code
+            ret.reason = response.reason
+
+            if response.status_code == 304:
+                return ret
+
+            if response.status_code == 200 and len(response.content or b"") == 0:
+                ret.status = 304
+                return ret
+
+            if response.status_code != 200 or response.content is None:
+                status_caption = f"{response.status_code}" + (
+                    f" {response.reason}" if response.reason else ""
+                )
+                ret.error = WebError(
+                    error_name="status error",
+                    status=status_caption,
+                    url=url,
+                    log_level=log_level,
+                )
+                return ret
+
+        except Exception as e:
+            error_name = "curl_cffi error"
+            error_msg = str(e).lower()
+
+            if "timeout" in error_msg:
+                error_name = "timeout"
+            elif "connection" in error_msg:
+                error_name = "network error"
+            elif "resolve" in error_msg:
+                error_name = "dns error"
+
+            ret.error = WebError(
+                error_name=error_name,
+                url=url,
+                base_error=e if isinstance(e, Exception) else None,
+                log_level=log_level,
+            )
+
+        return ret

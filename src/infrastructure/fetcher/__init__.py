@@ -4,6 +4,7 @@
 """
 
 from ...application.dto import WebFeed as WebFeed
+from .curl_fetcher import CurlFetcher as CurlFetcher
 from .http import HttpFetcher
 from .rss import (
     Enclosure as Enclosure,
@@ -27,6 +28,7 @@ from .rss import (
 __all__ = [
     "WebFeed",
     "HttpFetcher",
+    "CurlFetcher",
     "RSSFeedFetcher",
     "RSSParser",
     "EntryParsed",

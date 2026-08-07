@@ -153,6 +153,13 @@
           "max": 1800,
           "step": 1
         }
+      },
+      "cloudflare_bypass": {
+        "type": "string",
+        "description": "Cloudflare 绕过策略",
+        "hint": "disabled=使用标准 aiohttp；curl_cffi=使用 curl_cffi 模拟浏览器 TLS 指纹绕过 Cloudflare 检测",
+        "default": "disabled",
+        "options": ["disabled", "curl_cffi"]
       }
     }
   },

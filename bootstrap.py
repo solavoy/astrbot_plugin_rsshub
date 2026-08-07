@@ -51,6 +51,7 @@ from .src.infrastructure.config import (
     heal_astrbot_plugin_config,
     set_config,
 )
+from .src.infrastructure.fetcher.curl_fetcher import CurlFetcher
 from .src.infrastructure.fetcher.rss import RSSFeedFetcher
 from .src.infrastructure.fetcher.rss.parser import RSSParser
 from .src.infrastructure.knowledge import (
@@ -87,6 +88,22 @@ from .src.infrastructure.utils.media_integrity import configure_media_integrity
 from .src.interfaces import WebApiHandler
 
 logger = get_logger()
+
+
+def _resolve_fetcher_factory(
+    app_settings: ApplicationSettings,
+) -> type[RSSFeedFetcher] | type[CurlFetcher]:
+    """Return the appropriate fetcher class based on cloudflare_bypass setting.
+
+    - ``disabled``: standard aiohttp-based RSSFeedFetcher
+    - ``curl_cffi``: curl_cffi-based CurlFetcher with TLS fingerprint impersonation
+    """
+    bypass = app_settings.http.cloudflare_bypass
+    if bypass == "curl_cffi":
+        logger.info("使用 curl_cffi 作为 RSS 抓取器（Cloudflare 绕过已启用）")
+        return CurlFetcher
+    logger.debug("使用标准 aiohttp 作为 RSS 抓取器（cloudflare_bypass=%s）", bypass)
+    return RSSFeedFetcher
 
 
 class PluginDeps(TypedDict, total=False):
@@ -419,12 +436,14 @@ async def _build_dependencies(
         subscription_defaults=app_settings.subscription_defaults,
         basic_settings=app_settings.basic,
     )
+    fetcher_factory = _resolve_fetcher_factory(app_settings)
+
     polling_service = FeedPollingService(
         feed_repo=feed_repo,
         subscription_repo=sub_repo,
         fetch_settings=app_settings.fetch,
         rss_settings=app_settings.rss,
-        fetcher_factory=RSSFeedFetcher,
+        fetcher_factory=fetcher_factory,
         parser=RSSParser(),
         notification_dispatcher=notification_dispatcher,
         history_entry_limit=app_settings.scheduler.history_entry_limit,
@@ -449,7 +468,7 @@ async def _build_dependencies(
             subscription_repo=sub_repo,
             feed_repo=feed_repo,
             fetch_settings=app_settings.fetch,
-            fetcher_factory=RSSFeedFetcher,
+            fetcher_factory=fetcher_factory,
             user_repo=user_repo,
         ),
         unsubscribe_cmd=UnsubscribeFeedCommand(
