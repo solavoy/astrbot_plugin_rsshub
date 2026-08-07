@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
-from collections.abc import Callable
 from typing import Any, TypedDict
 
 from astrbot.api import AstrBotConfig
@@ -52,10 +51,7 @@ from .src.infrastructure.config import (
     heal_astrbot_plugin_config,
     set_config,
 )
-from .src.infrastructure.fetcher.cloudflare_bypass_fetcher import (
-    CloudflareBypassFetcher,
-)
-from .src.infrastructure.fetcher.rss import RSSFeedFetcher
+from .src.infrastructure.fetcher import CloudflareBypassFetcher
 from .src.infrastructure.fetcher.rss.parser import RSSParser
 from .src.infrastructure.knowledge import (
     AstrBotRouteKnowledgeRepository,
@@ -93,25 +89,16 @@ from .src.interfaces import WebApiHandler
 logger = get_logger()
 
 
-def _resolve_fetcher_factory(
-    app_settings: ApplicationSettings,
-) -> Callable[..., RSSFeedFetcher | CloudflareBypassFetcher]:
-    """Return a factory callable for creating feed fetchers.
+def _build_fetcher_factory() -> (
+    type[CloudflareBypassFetcher]
+):
+    """Return the CloudflareBypassFetcher class as the default fetcher factory.
 
-    - ``disabled``: returns RSSFeedFetcher (aiohttp only)
-    - ``curl_cffi``: returns CloudflareBypassFetcher which auto-escalates
-      aiohttp -> curl_cffi -> CloakBrowser
+    The fetcher internally cascades aiohttp -> curl_cffi -> CloakBrowser
+    to auto-bypass Cloudflare challenges without any manual configuration.
     """
-    bypass = app_settings.http.cloudflare_bypass
-    if bypass == "curl_cffi":
-        logger.info("启用 Cloudflare 自动绕过（aiohttp -> curl_cffi -> CloakBrowser）")
-
-        def _bypass_factory(*, timeout: int = 30, proxy: str = "") -> CloudflareBypassFetcher:
-            return CloudflareBypassFetcher(timeout=timeout, proxy=proxy)
-
-        return _bypass_factory
-    logger.debug("使用标准 aiohttp 作为 RSS 抓取器（cloudflare_bypass=%s）", bypass)
-    return RSSFeedFetcher
+    logger.info("使用 Cloudflare 自动绕过获取器（aiohttp -> curl_cffi -> CloakBrowser）")
+    return CloudflareBypassFetcher
 
 
 class PluginDeps(TypedDict, total=False):
@@ -444,7 +431,7 @@ async def _build_dependencies(
         subscription_defaults=app_settings.subscription_defaults,
         basic_settings=app_settings.basic,
     )
-    fetcher_factory = _resolve_fetcher_factory(app_settings)
+    fetcher_factory = _build_fetcher_factory()
 
     polling_service = FeedPollingService(
         feed_repo=feed_repo,

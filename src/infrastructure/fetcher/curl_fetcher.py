@@ -35,8 +35,8 @@ class CurlFetcher:
     Drop-in for HttpFetcher in the FeedFetcher protocol, using curl_cffi's
     AsyncSession to mimic real browser TLS/HTTP2 handshakes.
 
-    Supports ``cf_clearance_cookies`` for bypassing Cloudflare JS challenges
-    by reusing a clearance cookie obtained from a real browser session.
+    Callers may pass per-request cookies (e.g. ``cf_clearance``) via the
+    ``cookies`` parameter.
     """
 
     def __init__(
@@ -44,27 +44,12 @@ class CurlFetcher:
         timeout: int = 30,
         proxy: str = "",
         impersonate: str = _DEFAULT_IMPERSONATE,
-        cf_clearance_cookies: str = "",
     ) -> None:
         self.timeout = max(1, int(timeout or 30))
         self.proxy = (proxy or "").strip()
         self.impersonate = impersonate or _DEFAULT_IMPERSONATE
         self._session: AsyncSession | None = None
         self._session_lock: asyncio.Lock = asyncio.Lock()
-        self._cf_cookies: dict[str, str] = {}
-        if cf_clearance_cookies:
-            self._cf_cookies = self._parse_cookies(cf_clearance_cookies)
-
-    @staticmethod
-    def _parse_cookies(cookie_str: str) -> dict[str, str]:
-        """Parse a ``cf_clearance=xxx; ...`` cookie string into a dict."""
-        result: dict[str, str] = {}
-        for part in cookie_str.split(";"):
-            part = part.strip()
-            if "=" in part:
-                key, val = part.split("=", 1)
-                result[key.strip()] = val.strip()
-        return result
 
     async def close(self) -> None:
         """Close the shared async session."""
@@ -107,7 +92,7 @@ class CurlFetcher:
             headers: Additional request headers
             verbose: Whether to log detailed info
             proxy: Temporary proxy override (not yet implemented for one-off)
-            cookies: Additional cookies to send (merged with ``cf_clearance_cookies``)
+            cookies: Cookies to send with the request
 
         Returns:
             WebFeed with raw response content and metadata
@@ -128,20 +113,13 @@ class CurlFetcher:
 
         effective_timeout = timeout or self.timeout
 
-        # Merge instance-level cf_cookies with per-request cookies
-        _cookies: dict[str, str] = {}
-        if self._cf_cookies:
-            _cookies.update(self._cf_cookies)
-        if cookies:
-            _cookies.update(cookies)
-
         try:
             session = await self._get_session()
 
             response: curl_requests.Response = await session.get(
                 url,
                 headers=_headers,
-                cookies=_cookies or None,
+                cookies=cookies or None,
                 timeout=effective_timeout,
             )
 

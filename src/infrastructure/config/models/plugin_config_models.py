@@ -248,10 +248,6 @@ class HttpConfig(BaseModel):
         default=_DEFAULT_MEDIA_TIMEOUT_SECONDS,
         description="媒体下载超时（秒）",
     )
-    cloudflare_bypass: str = Field(
-        default="disabled",
-        description="Cloudflare 绕过策略",
-    )
 
     @classmethod
     def from_dict(cls, data: dict[str, Any] | None) -> HttpConfig:

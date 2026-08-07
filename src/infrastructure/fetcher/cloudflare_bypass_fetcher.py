@@ -23,7 +23,7 @@ from ...domain.exceptions import WebError
 from ..utils import get_logger
 from .cf_cookie_store import CfCookieStore
 from .curl_fetcher import CurlFetcher
-from .http import HttpFetcher
+from .rss import RSSFeedFetcher
 
 logger = get_logger()
 
@@ -90,8 +90,8 @@ class CloudflareBypassFetcher:
         self.proxy = (proxy or "").strip()
         self._cookie_store = cookie_store or CfCookieStore()
         self._impersonate = impersonate
-        # aiohttp fetcher (fast path)
-        self._http_fetcher = HttpFetcher(timeout=self.timeout, proxy=self.proxy)
+        # aiohttp fetcher with RSS parsing (fast path)
+        self._rss_fetcher = RSSFeedFetcher(timeout=self.timeout, proxy=self.proxy)
         # curl_cffi fetcher (TLS impersonation), cookie injected at request time
         self._curl_fetcher = CurlFetcher(
             timeout=self.timeout,
@@ -102,7 +102,7 @@ class CloudflareBypassFetcher:
 
     async def close(self) -> None:
         """Release fetcher resources."""
-        await self._http_fetcher.close()
+        await self._rss_fetcher.close()
         await self._curl_fetcher.close()
 
     # --- tier 1: aiohttp ---
@@ -115,7 +115,7 @@ class CloudflareBypassFetcher:
         headers: dict[str, str] | None,
         verbose: bool,
     ) -> WebFeed:
-        return await self._http_fetcher.fetch(
+        return await self._rss_fetcher.fetch(
             url,
             timeout=timeout,
             headers=headers,

@@ -153,13 +153,6 @@
           "max": 1800,
           "step": 1
         }
-      },
-      "cloudflare_bypass": {
-        "type": "string",
-        "description": "Cloudflare 绕过策略",
-        "hint": "disabled=使用标准 aiohttp；curl_cffi=启用自动绕过（aiohttp->curl_cffi->CloakBrowser），遇到 Cloudflare JS 挑战时自动用无头浏览器解决并缓存 cf_clearance cookie",
-        "default": "disabled",
-        "options": ["disabled", "curl_cffi"]
       }
     }
   },
