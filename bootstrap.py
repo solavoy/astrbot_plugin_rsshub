@@ -52,7 +52,9 @@ from .src.infrastructure.config import (
     heal_astrbot_plugin_config,
     set_config,
 )
-from .src.infrastructure.fetcher.curl_fetcher import CurlFetcher
+from .src.infrastructure.fetcher.cloudflare_bypass_fetcher import (
+    CloudflareBypassFetcher,
+)
 from .src.infrastructure.fetcher.rss import RSSFeedFetcher
 from .src.infrastructure.fetcher.rss.parser import RSSParser
 from .src.infrastructure.knowledge import (
@@ -93,26 +95,21 @@ logger = get_logger()
 
 def _resolve_fetcher_factory(
     app_settings: ApplicationSettings,
-) -> Callable[..., RSSFeedFetcher | CurlFetcher]:
+) -> Callable[..., RSSFeedFetcher | CloudflareBypassFetcher]:
     """Return a factory callable for creating feed fetchers.
 
-    - ``disabled``: returns RSSFeedFetcher (aiohttp)
-    - ``curl_cffi``: returns a closure that creates CurlFetcher with
-      cf_clearance_cookies from config
+    - ``disabled``: returns RSSFeedFetcher (aiohttp only)
+    - ``curl_cffi``: returns CloudflareBypassFetcher which auto-escalates
+      aiohttp -> curl_cffi -> CloakBrowser
     """
     bypass = app_settings.http.cloudflare_bypass
     if bypass == "curl_cffi":
-        cf_cookies = app_settings.http.cf_clearance_cookies
-        logger.info("使用 curl_cffi 作为 RSS 抓取器（Cloudflare 绕过已启用）")
+        logger.info("启用 Cloudflare 自动绕过（aiohttp -> curl_cffi -> CloakBrowser）")
 
-        def _curl_factory(*, timeout: int = 30, proxy: str = "") -> CurlFetcher:
-            return CurlFetcher(
-                timeout=timeout,
-                proxy=proxy,
-                cf_clearance_cookies=cf_cookies,
-            )
+        def _bypass_factory(*, timeout: int = 30, proxy: str = "") -> CloudflareBypassFetcher:
+            return CloudflareBypassFetcher(timeout=timeout, proxy=proxy)
 
-        return _curl_factory
+        return _bypass_factory
     logger.debug("使用标准 aiohttp 作为 RSS 抓取器（cloudflare_bypass=%s）", bypass)
     return RSSFeedFetcher
 

@@ -97,6 +97,7 @@ class CurlFetcher:
         headers: dict[str, str] | None = None,
         verbose: bool = True,
         proxy: str | None = None,
+        cookies: dict[str, str] | None = None,
     ) -> WebFeed:
         """Fetch a feed URL using curl_cffi with TLS impersonation.
 
@@ -106,6 +107,7 @@ class CurlFetcher:
             headers: Additional request headers
             verbose: Whether to log detailed info
             proxy: Temporary proxy override (not yet implemented for one-off)
+            cookies: Additional cookies to send (merged with ``cf_clearance_cookies``)
 
         Returns:
             WebFeed with raw response content and metadata
@@ -126,13 +128,20 @@ class CurlFetcher:
 
         effective_timeout = timeout or self.timeout
 
+        # Merge instance-level cf_cookies with per-request cookies
+        _cookies: dict[str, str] = {}
+        if self._cf_cookies:
+            _cookies.update(self._cf_cookies)
+        if cookies:
+            _cookies.update(cookies)
+
         try:
             session = await self._get_session()
 
             response: curl_requests.Response = await session.get(
                 url,
                 headers=_headers,
-                cookies=self._cf_cookies or None,
+                cookies=_cookies or None,
                 timeout=effective_timeout,
             )
 

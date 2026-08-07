@@ -291,9 +291,6 @@ def build_application_settings(config: Any) -> ApplicationSettings:
         cloudflare_bypass=str(
             _get_value(http_cfg, "cloudflare_bypass", "disabled") or "disabled"
         ),
-        cf_clearance_cookies=str(
-            _get_value(http_cfg, "cf_clearance_cookies", "") or ""
-        ),
     )
     basic = BasicSettings(
         proxy=http.proxy,

@@ -4,6 +4,7 @@
 """
 
 from ...application.dto import WebFeed as WebFeed
+from .cloudflare_bypass_fetcher import CloudflareBypassFetcher as CloudflareBypassFetcher
 from .curl_fetcher import CurlFetcher as CurlFetcher
 from .http import HttpFetcher
 from .rss import (
@@ -29,6 +30,7 @@ __all__ = [
     "WebFeed",
     "HttpFetcher",
     "CurlFetcher",
+    "CloudflareBypassFetcher",
     "RSSFeedFetcher",
     "RSSParser",
     "EntryParsed",

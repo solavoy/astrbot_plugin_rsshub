@@ -157,15 +157,9 @@
       "cloudflare_bypass": {
         "type": "string",
         "description": "Cloudflare 绕过策略",
-        "hint": "disabled=使用标准 aiohttp；curl_cffi=使用 curl_cffi 模拟浏览器 TLS 指纹绕过 Cloudflare 检测",
+        "hint": "disabled=使用标准 aiohttp；curl_cffi=启用自动绕过（aiohttp->curl_cffi->CloakBrowser），遇到 Cloudflare JS 挑战时自动用无头浏览器解决并缓存 cf_clearance cookie",
         "default": "disabled",
         "options": ["disabled", "curl_cffi"]
-      },
-      "cf_clearance_cookies": {
-        "type": "string",
-        "description": "Cloudflare cf_clearance Cookie",
-        "hint": "从浏览器开发者工具中复制 cf_clearance cookie 值，用于通过 Cloudflare JS 挑战。先在浏览器中访问目标站点完成挑战，然后在 Cookie 中找到 cf_clearance 的值填到这里",
-        "default": ""
       }
     }
   },

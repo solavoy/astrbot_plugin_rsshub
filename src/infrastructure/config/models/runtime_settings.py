@@ -51,7 +51,6 @@ class HttpSettings:
     timeout: int = 30
     media_timeout: int = _DEFAULT_MEDIA_TIMEOUT_SECONDS
     cloudflare_bypass: str = "disabled"
-    cf_clearance_cookies: str = ""
 
 
 @dataclass(frozen=True)
