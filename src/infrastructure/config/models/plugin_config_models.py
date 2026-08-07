@@ -252,6 +252,10 @@ class HttpConfig(BaseModel):
         default="disabled",
         description="Cloudflare 绕过策略",
     )
+    cf_clearance_cookies: str = Field(
+        default="",
+        description="Cloudflare cf_clearance cookie",
+    )
 
     @classmethod
     def from_dict(cls, data: dict[str, Any] | None) -> HttpConfig:

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
+from collections.abc import Callable
 from typing import Any, TypedDict
 
 from astrbot.api import AstrBotConfig
@@ -92,16 +93,26 @@ logger = get_logger()
 
 def _resolve_fetcher_factory(
     app_settings: ApplicationSettings,
-) -> type[RSSFeedFetcher] | type[CurlFetcher]:
-    """Return the appropriate fetcher class based on cloudflare_bypass setting.
+) -> Callable[..., RSSFeedFetcher | CurlFetcher]:
+    """Return a factory callable for creating feed fetchers.
 
-    - ``disabled``: standard aiohttp-based RSSFeedFetcher
-    - ``curl_cffi``: curl_cffi-based CurlFetcher with TLS fingerprint impersonation
+    - ``disabled``: returns RSSFeedFetcher (aiohttp)
+    - ``curl_cffi``: returns a closure that creates CurlFetcher with
+      cf_clearance_cookies from config
     """
     bypass = app_settings.http.cloudflare_bypass
     if bypass == "curl_cffi":
+        cf_cookies = app_settings.http.cf_clearance_cookies
         logger.info("使用 curl_cffi 作为 RSS 抓取器（Cloudflare 绕过已启用）")
-        return CurlFetcher
+
+        def _curl_factory(*, timeout: int = 30, proxy: str = "") -> CurlFetcher:
+            return CurlFetcher(
+                timeout=timeout,
+                proxy=proxy,
+                cf_clearance_cookies=cf_cookies,
+            )
+
+        return _curl_factory
     logger.debug("使用标准 aiohttp 作为 RSS 抓取器（cloudflare_bypass=%s）", bypass)
     return RSSFeedFetcher
 
