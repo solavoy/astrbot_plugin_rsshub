@@ -49,6 +49,7 @@ class CurlFetcher:
         self.proxy = (proxy or "").strip()
         self.impersonate = impersonate or _DEFAULT_IMPERSONATE
         self._session: AsyncSession | None = None
+        self._session_closed: bool = False
         self._session_lock: asyncio.Lock = asyncio.Lock()
 
     async def close(self) -> None:
@@ -60,11 +61,12 @@ class CurlFetcher:
                 except Exception:
                     pass
                 self._session = None
+                self._session_closed = True
 
     async def _get_session(self) -> AsyncSession:
         """Get or create the shared AsyncSession."""
         async with self._session_lock:
-            if self._session is None or self._session.closed:
+            if self._session is None or self._session_closed:
                 self._session = AsyncSession(
                     impersonate=self.impersonate,
                     timeout=self.timeout,
@@ -72,6 +74,7 @@ class CurlFetcher:
                     if self.proxy
                     else None,
                 )
+                self._session_closed = False
         return self._session
 
     async def fetch(
