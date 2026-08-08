@@ -23,6 +23,20 @@ logger = get_logger()
 # browser can be reused by curl_cffi with the same TLS fingerprint + UA.
 _DEFAULT_IMPERSONATE: str = "chrome146"
 
+# User-Agent string matching the impersonate target above.
+#
+# CloakBrowser (the JS-challenge solver) runs Chromium 146 and, on Linux,
+# spoofs a *Windows* Chrome. curl_cffi's chrome146 impersonate instead
+# sends a *macOS* Chrome UA by default. Cloudflare binds cf_clearance
+# cookies to the full UA string, so curl_cffi must send the exact same
+# Windows UA as the browser that produced the cookie, otherwise the
+# cookie is rejected.
+_CLOAKBROWSER_CHROME146_UA: str = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) "
+    "Chrome/146.0.0.0 Safari/537.36"
+)
+
 # Feed-appropriate Accept header
 _FEED_ACCEPT: str = (
     "application/rss+xml, application/rdf+xml, application/atom+xml, "
@@ -131,6 +145,15 @@ class CurlFetcher:
         }
         if headers:
             _headers.update(headers)
+        # For the default chrome146 impersonate, send the same Windows UA as
+        # CloakBrowser so cf_clearance cookies can be reused across clients.
+        # Only applied when the caller did not explicitly set a User-Agent.
+        effective_impersonate = (impersonate or "").strip() or self.impersonate
+        if (
+            effective_impersonate == _DEFAULT_IMPERSONATE
+            and "User-Agent" not in _headers
+        ):
+            _headers["User-Agent"] = _CLOAKBROWSER_CHROME146_UA
 
         effective_timeout = timeout or self.timeout
 
