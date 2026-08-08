@@ -69,16 +69,28 @@ def _looks_like_cloudflare_challenge(content: bytes | None, headers: dict) -> bo
 
 
 def _is_blocked_by_cloudflare(web_feed: WebFeed) -> bool:
-    """True if the WebFeed indicates a Cloudflare block or challenge.
+    """True if the WebFeed warrants a Cloudflare-bypass escalation.
 
-    A challenge is detected by body content regardless of HTTP status, so a
-    zone that serves the challenge interstitial at HTTP 200 is also escalated.
-    A plain-text app-level 403/503 (no challenge markers) is NOT treated as a
-    CF block, so the expensive bypass cascade is not wasted on it.
+    Escalation is triggered when:
+    - The body looks like a CF challenge page (regardless of HTTP status,
+      so a 200-served challenge interstitial is caught too), OR
+    - The response is 403/503 behind a Cloudflare server. A CF-fronted
+      origin may hand a *plain app-level 403* to a weak client (e.g. aiohttp)
+      while serving a JS challenge to a browser-fingerprint client. Trying
+      curl_cffi (different TLS fingerprint) can surface the challenge and
+      then let CloakBrowser solve it.
+
+    A 404/5xx without any Cloudflare trace is NOT escalated.
     """
     if web_feed.content is None and not web_feed.headers:
         return False
-    return _looks_like_cloudflare_challenge(web_feed.content, web_feed.headers)
+    if _looks_like_cloudflare_challenge(web_feed.content, web_feed.headers):
+        return True
+    if web_feed.status in (403, 503):
+        for key, value in web_feed.headers.items():
+            if key.lower() == "server" and "cloudflare" in str(value).lower():
+                return True
+    return False
 
 
 def _is_fetch_success(web_feed: WebFeed) -> bool:
