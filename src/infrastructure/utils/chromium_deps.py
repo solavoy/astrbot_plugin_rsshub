@@ -73,13 +73,6 @@ _CHROMIUM_DEBIAN_BULLSEYE_PACKAGES: Final[list[str]] = [
     "libwayland-cursor0",
 ]
 
-# 尝试用内置的安装工具（优先）
-_INSTALL_TOOL_NAMES: Final[list[str]] = [
-    "playwright install-deps chromium",
-    "npx playwright install-deps chromium",
-    "playwright install --with-deps chromium",
-]
-
 
 def _get_marker_dir() -> Path:
     """依赖标记文件存放目录。"""
@@ -213,14 +206,17 @@ def _run_apt_install(packages: list[str]) -> bool:
         return False
 
 
-async def ensure_chromium_deps() -> bool:
-    """确保 Chromium 系统依赖已安装。
+def ensure_chromium_deps() -> bool:
+    """检查 Chromium 系统依赖；若缺失则在后台启动安装。
 
-    如果已有标记文件，跳过检查。否则定位 Chrome 二进制，
-    检测缺失库，通过 apt-get 安装对应包。
+    该函数只做快速的同步检测（毫秒级），发现缺失库时创建后台线程
+    执行 apt-get 安装，**不阻塞调用方**。安装完成后会重新用 ldd 验证
+    并写入标记文件；验证失败（包列表不全）会保留标记缺失，下次启动
+    重新尝试。
 
     Returns:
-        ``True`` 依赖就绪或无需安装，``False`` 安装失败。
+        ``True`` 依赖已就绪或已发起后台安装（无需阻塞等待），
+        ``False`` 仅当检测本身失败（无法判断）。
     """
     # 非 Linux 系统跳过
     if platform.system() != "Linux":
@@ -231,13 +227,13 @@ async def ensure_chromium_deps() -> bool:
         logger.debug("Chromium 依赖已安装（标记文件存在）")
         return True
 
-    # 找 Chrome 二进制
+    # 找 Chrome 二进制（同步、快速）
     chrome_path = _detect_chrome_binary()
     if not chrome_path:
         logger.debug("未检测到 CloakBrowser Chrome 二进制，跳过依赖检查")
         return True
 
-    # 检测缺失库
+    # 检测缺失库（同步、快速）
     missing = _check_missing_libraries(chrome_path)
     if not missing:
         logger.debug("Chromium 所有系统依赖已满足")
@@ -245,30 +241,43 @@ async def ensure_chromium_deps() -> bool:
         return True
 
     logger.info(
-        "检测到 CloakBrowser Chrome 缺少 %d 个系统库，准备安装",
+        "检测到 CloakBrowser Chrome 缺少 %d 个系统库，后台安装中",
         len(missing),
     )
 
-    # 在后台安装，不阻塞启动
-    def _install():
-        success = _run_apt_install(_CHROMIUM_DEBIAN_PACKAGES)
-        if success:
-            _mark_installed()
+    # 后台安装（线程池），不阻塞启动。安装后重新验证缺失库并写标记。
+    def _install() -> None:
+        _run_apt_install_with_verify(_CHROMIUM_DEBIAN_PACKAGES, chrome_path)
 
-    await asyncio.to_thread(_install)
+    def _install_fallback() -> None:
+        _run_apt_install_with_verify(
+            _CHROMIUM_DEBIAN_BULLSEYE_PACKAGES,
+            chrome_path,
+        )
 
-    # 安装后再验证
-    if _is_installed():
-        return True
+    import threading
 
-    # 如果标记文件没写，可能是包名不匹配（Debian 版本不同）→ 试备选列表
-    logger.info("尝试备选包名列表（Debian Bullseye 兼容）...")
+    try:
+        threading.Thread(
+            target=_install,
+            name="chromium-deps-install",
+            daemon=True,
+        ).start()
+    except Exception as exc:
+        logger.warning("无法启动 Chromium 依赖后台安装: %s", exc)
+        return False
 
-    def _install_fallback():
-        success = _run_apt_install(_CHROMIUM_DEBIAN_BULLSEYE_PACKAGES)
-        if success:
-            _mark_installed()
+    return True
 
-    await asyncio.to_thread(_install_fallback)
 
-    return _is_installed()
+def _run_apt_install_with_verify(packages: list[str], chrome_path: str) -> None:
+    """安装依赖，安装成功后重新检测缺失库，确认后才写标记。
+
+    安装后仍缺库（固定包列表未覆盖）时不写标记，保证下次启动重试。
+    """
+    if _run_apt_install(packages) and not _check_missing_libraries(chrome_path):
+        _mark_installed()
+    else:
+        logger.warning(
+            "Chromium 依赖安装后仍缺失系统库，标记不写入，下次启动将重试"
+        )

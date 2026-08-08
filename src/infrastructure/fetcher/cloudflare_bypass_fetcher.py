@@ -28,48 +28,68 @@ from .rss import RSSFeedFetcher
 
 logger = get_logger()
 
-# Response body markers that indicate a Cloudflare challenge/interstitial page
+# Module-level lock serializing CloakBrowser launches across ALL fetcher
+# instances. FeedPollingService creates a fresh fetcher per call, so an
+# instance-level lock would not prevent concurrent headless Chromium
+# launches when two polls overlap.
+_CLOAKBROWSER_LOCK = asyncio.Lock()
+
+# Response body markers that indicate a Cloudflare challenge/interstitial page.
+# These are specific to the CF challenge HTML; a plain-text app-level 403
+# (e.g. RSSHub's "restrict access" message) does not contain them.
 _CF_CHALLENGE_MARKERS: tuple[str, ...] = (
     "cf-mitigated",
     "cf_chl_opt",
     "challenge-platform",
     "Just a moment",
     "__cf_chl_",
-    "cf_clearance",
     "challenges.cloudflare.com",
 )
 
 
 def _looks_like_cloudflare_challenge(content: bytes | None, headers: dict) -> bool:
-    """Detect whether the response is a Cloudflare challenge page."""
-    if content is None:
-        return False
-    sample = content[:65536].decode("utf-8", errors="ignore").lower()
-    for marker in _CF_CHALLENGE_MARKERS:
-        if marker.lower() in sample:
-            return True
-    # Cloudflare also sends cf-ray header on challenge pages
-    for key, value in headers.items():
-        if key.lower() == "server" and "cloudflare" in str(value).lower():
-            return True
+    """Detect whether the response body is a Cloudflare challenge page.
+
+    Detection is body-based and specific: it looks for CF challenge HTML
+    markers. The ``server: cloudflare`` header alone is NOT sufficient
+    (many origins sit behind CF but serve plain app-level errors); it is
+    only used as a weak hint when no content is available.
+    """
+    if content:
+        sample = content[:65536].decode("utf-8", errors="ignore").lower()
+        for marker in _CF_CHALLENGE_MARKERS:
+            if marker in sample:
+                return True
+    # No content (e.g. empty 403/503): fall back to the server header hint.
+    if not content:
+        for key, value in headers.items():
+            if key.lower() == "server" and "cloudflare" in str(value).lower():
+                return True
     return False
 
 
 def _is_blocked_by_cloudflare(web_feed: WebFeed) -> bool:
-    """True if the WebFeed indicates a Cloudflare block or challenge."""
-    if web_feed.status == 403:
-        # Could be an app-level 403 (e.g. RSSHub) or a CF 403.
-        # Only treat as CF-block if the body looks like a challenge page.
-        if _looks_like_cloudflare_challenge(web_feed.content, web_feed.headers):
-            return True
-        # RSSHub app-level 403 returns plain text with its own message.
-        # That is NOT a CF challenge; do not bypass it.
+    """True if the WebFeed indicates a Cloudflare block or challenge.
+
+    A challenge is detected by body content regardless of HTTP status, so a
+    zone that serves the challenge interstitial at HTTP 200 is also escalated.
+    A plain-text app-level 403/503 (no challenge markers) is NOT treated as a
+    CF block, so the expensive bypass cascade is not wasted on it.
+    """
+    if web_feed.content is None and not web_feed.headers:
         return False
-    if web_feed.status in (503, 429) and _looks_like_cloudflare_challenge(
-        web_feed.content, web_feed.headers
-    ):
-        return True
-    return False
+    return _looks_like_cloudflare_challenge(web_feed.content, web_feed.headers)
+
+
+def _is_fetch_success(web_feed: WebFeed) -> bool:
+    """True when a fetch result is usable feed content (not a challenge)."""
+    if web_feed.error is not None:
+        return False
+    if web_feed.status not in (200, 304):
+        return False
+    if _looks_like_cloudflare_challenge(web_feed.content, web_feed.headers):
+        return False
+    return True
 
 
 class CloudflareBypassFetcher:
@@ -99,7 +119,6 @@ class CloudflareBypassFetcher:
             proxy=self.proxy,
             impersonate=self._impersonate,
         )
-        self._cloak_lock = asyncio.Lock()
 
     async def close(self) -> None:
         """Release fetcher resources."""
@@ -115,12 +134,14 @@ class CloudflareBypassFetcher:
         timeout: float | None,
         headers: dict[str, str] | None,
         verbose: bool,
+        proxy: str | None = None,
     ) -> WebFeed:
         return await self._rss_fetcher.fetch(
             url,
             timeout=timeout,
             headers=headers,
             verbose=verbose,
+            proxy=proxy,
         )
 
     # --- tier 2: curl_cffi ---
@@ -134,6 +155,7 @@ class CloudflareBypassFetcher:
         verbose: bool,
         cookies: dict[str, str] | None = None,
         impersonate: str | None = None,
+        proxy: str | None = None,
     ) -> WebFeed:
         return await self._curl_fetcher.fetch(
             url,
@@ -142,6 +164,7 @@ class CloudflareBypassFetcher:
             verbose=verbose,
             cookies=cookies,
             impersonate=impersonate,
+            proxy=proxy,
         )
 
     # --- tier 3: CloakBrowser ---
@@ -151,12 +174,19 @@ class CloudflareBypassFetcher:
         url: str,
         *,
         timeout: float | None,
-    ) -> ClearanceCookie | None:
-        """Launch CloakBrowser, solve the JS challenge, persist the cookie.
+    ) -> tuple[ClearanceCookie | None, WebFeed | None]:
+        """Launch CloakBrowser, solve the JS challenge.
 
-        Returns:
-            The solved clearance cookie (with matching impersonate target)
-            or ``None`` if the challenge could not be solved.
+        Returns a ``(clearance_cookie, browser_feed)`` tuple:
+        - ``clearance_cookie``: the solved cookie (with matching impersonate),
+          persisted per-domain for reuse; ``None`` if no cookie was found.
+        - ``browser_feed``: the feed content loaded directly in the browser,
+          as a ``WebFeed`` with rss_d parsed; ``None`` if the page did not
+          resolve to a usable feed.
+
+        Even when no cookie is found, the browser may have the feed content in
+        hand (challenge auto-passed without emitting a cookie), so it is
+        returned as a fallback instead of being wasted.
         """
         domain = CfCookieStore.extract_domain(url)
         try:
@@ -167,9 +197,9 @@ class CloudflareBypassFetcher:
                     "检测到 Cloudflare JS 挑战，但未安装 cloakbrowser。"
                     "如需自动绕过，请运行: pip install cloakbrowser"
                 )
-                return None
+                return None, None
 
-            async with self._cloak_lock:
+            async with _CLOAKBROWSER_LOCK:
                 timeout_s = max(10, int(timeout or self.timeout))
                 browser = await launch_async(headless=True)
                 try:
@@ -192,24 +222,31 @@ class CloudflareBypassFetcher:
                         logger.debug("CloakBrowser 导航警告: %s", nav_exc)
 
                     # Poll until Cloudflare challenge resolves (up to ~30s).
-                    resolved = False
+                    page_content = ""
                     for _ in range(15):
                         await asyncio.sleep(2)
                         try:
                             candidate = await page.content()
                         except Exception:
                             candidate = ""
-                        if candidate and "Just a moment" not in candidate:
-                            resolved = True
+                        # "resolved" means the page is no longer a challenge.
+                        # Check by challenge markers, not just the literal
+                        # "Just a moment", so other challenge variants
+                        # (localized text, __cf_chl_ pages) are also caught.
+                        if candidate and not _looks_like_cloudflare_challenge(
+                            candidate.encode("utf-8", errors="ignore"), {}
+                        ):
+                            page_content = candidate
                             break
-                    if not resolved:
+                    if not page_content:
                         logger.warning("CloakBrowser 等待挑战超时 (%s)", domain)
-                        return None
+                        return None, None
 
                     # Extract and persist cf_clearance cookie. The cookie is
                     # bound to Chromium 146 (CloakBrowser's build), so store
                     # impersonate=chrome146 so curl_cffi can replay the same
                     # TLS fingerprint + UA and reuse the cookie.
+                    clearance: ClearanceCookie | None = None
                     ctx = page.context
                     cookies = await ctx.cookies()
                     for c in cookies:
@@ -227,10 +264,15 @@ class CloudflareBypassFetcher:
                                     "CloakBrowser 已解决 %s 的 Cloudflare 挑战",
                                     domain,
                                 )
-                                return self._cookie_store.get(domain)
+                                clearance = self._cookie_store.get(domain)
                             break
-                    logger.warning("CloakBrowser 未能从 %s 获取 cf_clearance", domain)
-                    return None
+
+                    # Build a WebFeed from the browser content as a fallback.
+                    browser_feed = self._browser_content_to_feed(
+                        page_content,
+                        url=page.url,
+                    )
+                    return clearance, browser_feed
                 finally:
                     try:
                         await browser.close()
@@ -238,7 +280,31 @@ class CloudflareBypassFetcher:
                         pass
         except Exception as exc:
             logger.warning("CloakBrowser 挑战失败 (%s): %s", domain, exc)
+            return None, None
+
+    def _browser_content_to_feed(self, page_content: str, *, url: str) -> WebFeed | None:
+        """Wrap browser page content into a ``WebFeed`` with rss_d parsed.
+
+        Returns ``None`` if the content is empty or not parseable as a feed.
+        """
+        if not page_content:
             return None
+        from .rss.document_parser import FeedDocumentParser
+
+        raw = page_content.encode("utf-8", errors="ignore")
+        feed = WebFeed(url=url, ori_url=url)
+        feed.content = raw
+        feed.status = 200
+        parser = FeedDocumentParser()
+        rss_d, parse_error, _base_error = parser.parse_feedparser_dict(
+            raw,
+            fallback_title=url,
+        )
+        if parse_error or rss_d is None:
+            logger.debug("CloakBrowser 内容无法解析为 Feed: %s", parse_error)
+            return None
+        feed.rss_d = rss_d
+        return feed
 
     # --- main fetch entry ---
 
@@ -253,16 +319,49 @@ class CloudflareBypassFetcher:
     ) -> WebFeed:
         """Fetch a feed, escalating through aiohttp -> curl_cffi -> CloakBrowser.
 
-        Behavior:
+        The whole cascade is bounded by an aggregate timeout so one slow,
+        CF-protected feed cannot stall the scheduler for minutes.
 
-        - Try aiohttp first. If it succeeds (HTTP 200 with parseable feed),
-          return immediately.
-        - If aiohttp hits a Cloudflare block/challenge, try curl_cffi with a
-          cached ``cf_clearance`` cookie (if any).
-        - If curl_cffi still hits a challenge, launch CloakBrowser to solve
-          it and read the feed directly from the browser.
-        - Final fallback: if all tiers fail, return the last error.
+        Returns:
+            WebFeed with content, or a WebFeed carrying the best error.
         """
+        base_timeout = timeout or self.timeout
+        # Aggregate cap: base timeout plus headroom for the browser tier
+        # (browser nav ~45s + challenge poll ~30s). Sequential tiers each
+        # have their own timeout; this bounds the whole cascade.
+        aggregate_timeout = float(base_timeout) + 90.0
+
+        try:
+            return await asyncio.wait_for(
+                self._fetch_cascade(
+                    url,
+                    timeout=timeout,
+                    headers=headers,
+                    verbose=verbose,
+                    proxy=proxy,
+                ),
+                timeout=aggregate_timeout,
+            )
+        except asyncio.TimeoutError:
+            logger.warning("Feed 抓取超时（%.0fs）: %s", aggregate_timeout, url)
+            ret = WebFeed(url=url, ori_url=url)
+            ret.error = WebError(
+                error_name="fetch timeout",
+                url=url,
+                log_level=30 if verbose else 10,
+            )
+            return ret
+
+    async def _fetch_cascade(
+        self,
+        url: str,
+        *,
+        timeout: float | None = None,
+        headers: dict[str, str] | None = None,
+        verbose: bool = True,
+        proxy: str | None = None,
+    ) -> WebFeed:
+        """Run the aiohttp -> curl_cffi -> CloakBrowser cascade."""
         domain = CfCookieStore.extract_domain(url)
 
         # Tier 1: aiohttp
@@ -271,8 +370,9 @@ class CloudflareBypassFetcher:
             timeout=timeout,
             headers=headers,
             verbose=verbose,
+            proxy=proxy,
         )
-        if result.error is None and result.status in (200, 304):
+        if _is_fetch_success(result):
             return result
 
         if not _is_blocked_by_cloudflare(result):
@@ -299,8 +399,9 @@ class CloudflareBypassFetcher:
             verbose=verbose,
             cookies=cookies,
             impersonate=impersonate,
+            proxy=proxy,
         )
-        if curl_result.error is None and curl_result.status in (200, 304):
+        if _is_fetch_success(curl_result):
             return curl_result
 
         # If we used a cached cookie but it failed, try without it to be sure
@@ -313,8 +414,9 @@ class CloudflareBypassFetcher:
                 verbose=verbose,
                 cookies=None,
                 impersonate=impersonate,
+                proxy=proxy,
             )
-            if curl_result.error is None and curl_result.status in (200, 304):
+            if _is_fetch_success(curl_result):
                 return curl_result
 
         if not _is_blocked_by_cloudflare(curl_result):
@@ -326,7 +428,7 @@ class CloudflareBypassFetcher:
         # needed on subsequent polls — cookie reuse works now that the
         # TLS fingerprint + UA match).
         logger.info("%s 需要 JS 挑战, 启动 CloakBrowser 解决...", domain)
-        solved = await self._solve_with_cloakbrowser(
+        solved, browser_feed = await self._solve_with_cloakbrowser(
             url,
             timeout=timeout,
         )
@@ -339,14 +441,22 @@ class CloudflareBypassFetcher:
                 verbose=verbose,
                 cookies=retry_cookies,
                 impersonate=solved.impersonate,
+                proxy=proxy,
             )
-            if curl_result.error is None and curl_result.status in (200, 304):
+            if _is_fetch_success(curl_result):
                 logger.info(
                     "%s 已用 CloakBrowser 的 cookie 通过挑战（impersonate=%s）",
                     domain,
                     solved.impersonate,
                 )
                 return curl_result
+
+        # Fallback: the browser already loaded the feed content directly.
+        # This covers cases where cookie reuse failed (e.g. fingerprint drift
+        # after a CloakBrowser upgrade) or no cookie was emitted.
+        if browser_feed is not None:
+            logger.info("%s 使用 CloakBrowser 直接加载的内容", domain)
+            return browser_feed
 
         # All tiers failed; return the best error we have
         logger.warning("%s 所有绕过策略均失败", domain)

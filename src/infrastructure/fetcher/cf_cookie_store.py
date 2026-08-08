@@ -90,6 +90,16 @@ class CfCookieStore:
         except OSError as exc:
             logger.warning("无法写入 Cloudflare cookie 缓存: %s", exc)
 
+    def _force_reload(self) -> None:
+        """Discard the in-memory snapshot and reload from disk.
+
+        Called before writes so concurrent instances do not clobber each
+        other's entries via stale snapshots.
+        """
+        self._loaded = False
+        self._cache = {}
+        self._load()
+
     def get(self, domain: str) -> ClearanceCookie | None:
         """Return a valid clearance cookie for *domain*, or ``None``."""
         self._load()
@@ -130,7 +140,10 @@ class CfCookieStore:
             impersonate: curl_cffi impersonate target matching the browser
                         that produced this cookie.
         """
-        self._load()
+        # Re-read from disk before mutating so an entry written by a
+        # concurrent instance (fresh fetcher -> fresh store) is not lost
+        # when this instance saves its whole snapshot.
+        self._force_reload()
         if expires_at is None:
             expires_at = time.time() + 86400  # 24h default
         self._cache[domain] = {
@@ -148,7 +161,7 @@ class CfCookieStore:
 
     def remove(self, domain: str) -> None:
         """Remove cached cookie for *domain*."""
-        self._load()
+        self._force_reload()
         if domain in self._cache:
             self._cache.pop(domain, None)
             self._save()

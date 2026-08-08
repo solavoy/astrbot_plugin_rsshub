@@ -8,15 +8,26 @@ from __future__ import annotations
 
 import asyncio
 
-from curl_cffi.requests import AsyncSession
-from curl_cffi import requests as curl_requests
-
 from ...application.dto import WebFeed
 from ...domain.exceptions import WebError
 from ..utils import get_logger
+from .rss import FEED_ACCEPT as _FEED_ACCEPT
 from .rss.document_parser import FeedDocumentParser
 
 logger = get_logger()
+
+
+def _get_curl_cffi():
+    """Lazily import curl_cffi, returning the module or raising ImportError.
+
+    curl_cffi is a runtime dependency but is imported lazily so that an
+    environment missing it can still load the plugin and use the aiohttp
+    fast path — only the curl_cffi tier degrades.
+    """
+    from curl_cffi.requests import AsyncSession
+    from curl_cffi import requests as curl_requests
+
+    return AsyncSession, curl_requests
 
 # Default browser impersonation string — must match the Chromium version
 # CloakBrowser downloads (v146) so cf_clearance cookies obtained from the
@@ -35,13 +46,6 @@ _CLOAKBROWSER_CHROME146_UA: str = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
     "AppleWebKit/537.36 (KHTML, like Gecko) "
     "Chrome/146.0.0.0 Safari/537.36"
-)
-
-# Feed-appropriate Accept header
-_FEED_ACCEPT: str = (
-    "application/rss+xml, application/rdf+xml, application/atom+xml, "
-    "application/feed+json, application/xml;q=0.9, text/xml;q=0.8, "
-    "application/json;q=0.7, text/*;q=0.7, application/*;q=0.6"
 )
 
 
@@ -94,6 +98,7 @@ class CurlFetcher:
                 or self._session_closed
                 or self._session_impersonate != target
             ):
+                AsyncSession, _curl_requests = _get_curl_cffi()
                 if self._session is not None:
                     try:
                         await self._session.close()
@@ -128,7 +133,7 @@ class CurlFetcher:
             timeout: Request timeout in seconds, defaults to instance timeout
             headers: Additional request headers
             verbose: Whether to log detailed info
-            proxy: Temporary proxy override (not yet implemented for one-off)
+            proxy: Temporary proxy override (defaults to the instance proxy)
             cookies: Cookies to send with the request
             impersonate: curl_cffi impersonate target to use (defaults to the
                          instance value). Must match the fingerprint that
@@ -156,6 +161,7 @@ class CurlFetcher:
             _headers["User-Agent"] = _CLOAKBROWSER_CHROME146_UA
 
         effective_timeout = timeout or self.timeout
+        effective_proxy = (proxy or "").strip() or self.proxy
 
         try:
             session = await self._get_session(impersonate)
@@ -165,6 +171,9 @@ class CurlFetcher:
                 headers=_headers,
                 cookies=cookies or None,
                 timeout=effective_timeout,
+                proxies={"http": effective_proxy, "https": effective_proxy}
+                if effective_proxy
+                else None,
             )
 
             ret.content = response.content
