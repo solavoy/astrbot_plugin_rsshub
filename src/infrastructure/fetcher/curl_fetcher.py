@@ -18,8 +18,10 @@ from .rss.document_parser import FeedDocumentParser
 
 logger = get_logger()
 
-# Default browser impersonation string
-_DEFAULT_IMPERSONATE: str = "chrome120"
+# Default browser impersonation string — must match the Chromium version
+# CloakBrowser downloads (v146) so cf_clearance cookies obtained from the
+# browser can be reused by curl_cffi with the same TLS fingerprint + UA.
+_DEFAULT_IMPERSONATE: str = "chrome146"
 
 # Feed-appropriate Accept header
 _FEED_ACCEPT: str = (
@@ -49,6 +51,7 @@ class CurlFetcher:
         self.proxy = (proxy or "").strip()
         self.impersonate = impersonate or _DEFAULT_IMPERSONATE
         self._session: AsyncSession | None = None
+        self._session_impersonate: str | None = None
         self._session_closed: bool = False
         self._session_lock: asyncio.Lock = asyncio.Lock()
 
@@ -63,17 +66,33 @@ class CurlFetcher:
                 self._session = None
                 self._session_closed = True
 
-    async def _get_session(self) -> AsyncSession:
-        """Get or create the shared AsyncSession."""
+    async def _get_session(self, impersonate: str | None = None) -> AsyncSession:
+        """Get or create the shared AsyncSession.
+
+        If *impersonate* differs from the current session's fingerprint,
+        the session is recreated so the TLS fingerprint + UA match the
+        impersonate target (needed to reuse Cloudflare clearance cookies).
+        """
+        target = (impersonate or "").strip() or self.impersonate
         async with self._session_lock:
-            if self._session is None or self._session_closed:
+            if (
+                self._session is None
+                or self._session_closed
+                or self._session_impersonate != target
+            ):
+                if self._session is not None:
+                    try:
+                        await self._session.close()
+                    except Exception:
+                        pass
                 self._session = AsyncSession(
-                    impersonate=self.impersonate,
+                    impersonate=target,
                     timeout=self.timeout,
                     proxies={"http": self.proxy, "https": self.proxy}
                     if self.proxy
                     else None,
                 )
+                self._session_impersonate = target
                 self._session_closed = False
         return self._session
 
@@ -86,6 +105,7 @@ class CurlFetcher:
         verbose: bool = True,
         proxy: str | None = None,
         cookies: dict[str, str] | None = None,
+        impersonate: str | None = None,
     ) -> WebFeed:
         """Fetch a feed URL using curl_cffi with TLS impersonation.
 
@@ -96,6 +116,9 @@ class CurlFetcher:
             verbose: Whether to log detailed info
             proxy: Temporary proxy override (not yet implemented for one-off)
             cookies: Cookies to send with the request
+            impersonate: curl_cffi impersonate target to use (defaults to the
+                         instance value). Must match the fingerprint that
+                         produced any ``cf_clearance`` cookie being reused.
 
         Returns:
             WebFeed with raw response content and metadata
@@ -105,11 +128,6 @@ class CurlFetcher:
 
         _headers: dict[str, str] = {
             "Accept": _FEED_ACCEPT,
-            "User-Agent": (
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/120.0.0.0 Safari/537.36"
-            ),
         }
         if headers:
             _headers.update(headers)
@@ -117,7 +135,7 @@ class CurlFetcher:
         effective_timeout = timeout or self.timeout
 
         try:
-            session = await self._get_session()
+            session = await self._get_session(impersonate)
 
             response: curl_requests.Response = await session.get(
                 url,

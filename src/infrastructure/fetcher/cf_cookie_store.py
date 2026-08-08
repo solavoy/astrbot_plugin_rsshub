@@ -2,12 +2,17 @@
 
 Persists ``cf_clearance`` cookies per domain to a local JSON file,
 so the CloakBrowser fallback only needs to run once per domain.
+
+Also records the browser ``impersonate`` target (e.g. ``chrome146``) used
+to obtain the cookie, so subsequent curl_cffi requests can replay the same
+TLS fingerprint + UA and reuse the cookie without relaunching a browser.
 """
 
 from __future__ import annotations
 
 import json
 import time
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
 
@@ -17,6 +22,20 @@ logger = get_logger()
 
 # Cookie expires 5 minutes before actual expiry to avoid edge cases
 _GRACE_SECONDS: Final = 300
+
+
+@dataclass(frozen=True)
+class ClearanceCookie:
+    """A cached Cloudflare clearance cookie for one domain."""
+
+    cookie: str
+    """Full ``cf_clearance=xxx...`` cookie string."""
+
+    impersonate: str
+    """curl_cffi impersonate target matching the browser that got this cookie."""
+
+    expires_at: float
+    """Unix timestamp when the cookie expires."""
 
 
 class CfCookieStore:
@@ -29,6 +48,7 @@ class CfCookieStore:
         {
             "rsshub.app": {
                 "cookie": "cf_clearance=xxx...",
+                "impersonate": "chrome146",
                 "expires_at": 1786082218.0
             }
         }
@@ -70,8 +90,8 @@ class CfCookieStore:
         except OSError as exc:
             logger.warning("无法写入 Cloudflare cookie 缓存: %s", exc)
 
-    def get(self, domain: str) -> str | None:
-        """Return a valid ``cf_clearance`` cookie string for *domain*, or ``None``."""
+    def get(self, domain: str) -> ClearanceCookie | None:
+        """Return a valid clearance cookie for *domain*, or ``None``."""
         self._load()
         entry = self._cache.get(domain)
         if not entry:
@@ -83,9 +103,23 @@ class CfCookieStore:
             self._save()
             return None
         cookie = entry.get("cookie", "")
-        return str(cookie) if cookie else None
+        if not cookie:
+            return None
+        impersonate = str(entry.get("impersonate", "") or "chrome146")
+        return ClearanceCookie(
+            cookie=str(cookie),
+            impersonate=impersonate,
+            expires_at=float(expires_at or 0),
+        )
 
-    def set(self, domain: str, cookie: str, expires_at: float | None = None) -> None:
+    def set(
+        self,
+        domain: str,
+        cookie: str,
+        expires_at: float | None = None,
+        *,
+        impersonate: str = "chrome146",
+    ) -> None:
         """Store a ``cf_clearance`` cookie for *domain*.
 
         Args:
@@ -93,16 +127,24 @@ class CfCookieStore:
             cookie: The full ``cf_clearance=xxx...`` cookie value
             expires_at: Unix timestamp when the cookie expires. If ``None``,
                         uses 24 hours from now as a conservative default.
+            impersonate: curl_cffi impersonate target matching the browser
+                        that produced this cookie.
         """
         self._load()
         if expires_at is None:
             expires_at = time.time() + 86400  # 24h default
         self._cache[domain] = {
             "cookie": cookie,
+            "impersonate": impersonate,
             "expires_at": expires_at,
         }
         self._save()
-        logger.info("已保存 cf_clearance cookie for %s (expires in %.0fh)", domain, (expires_at - time.time()) / 3600)
+        logger.info(
+            "已保存 cf_clearance cookie for %s (impersonate=%s, expires in %.0fh)",
+            domain,
+            impersonate,
+            (expires_at - time.time()) / 3600,
+        )
 
     def remove(self, domain: str) -> None:
         """Remove cached cookie for *domain*."""
