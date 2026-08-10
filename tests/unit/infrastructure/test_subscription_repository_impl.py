@@ -40,7 +40,7 @@ class _DummyCtx:
 
 
 @pytest.mark.asyncio
-async def test_update_options_serializes_handlers(monkeypatch):
+async def test_update_options_applies_generic_fields(monkeypatch):
     existing = SimpleNamespace(
         id=2,
         state=1,
@@ -54,8 +54,6 @@ async def test_update_options_serializes_handlers(monkeypatch):
         next_check_time=None,
         notify=-100,
         send_mode=-100,
-        handlers_mode="inherit",
-        handlers="[]",
         length_limit=-100,
         display_author=-100,
         display_via=-100,
@@ -80,22 +78,13 @@ async def test_update_options_serializes_handlers(monkeypatch):
     result = await repo.update_options(
         2,
         "u1",
-        handlers=[
-            {
-                "id": "builtin.xml_parse.default",
-                "type": "builtin",
-                "name": "xml_parse",
-                "status": 1,
-                "config": {},
-            }
-        ],
-        handlers_mode="override",
+        title="New Title",
+        interval=15,
     )
 
     assert result is not None
-    assert existing.handlers_mode == "override"
-    assert isinstance(existing.handlers, str)
-    assert existing.handlers == "[]"
+    assert existing.title == "New Title"
+    assert existing.interval == 15
     session.commit.assert_awaited_once()
 
 

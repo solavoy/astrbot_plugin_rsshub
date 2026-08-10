@@ -64,12 +64,7 @@
 
 ### `update_options(sub_id, user_id, **kwargs)`
 
-只允许当前用户更新自己的订阅。
-
-其中：
-
-- `handlers` 会先转成 JSON 字符串
-- `handlers_mode` 会做标准化
+只允许当前用户更新自己的订阅。参数会按 ORM 模型字段直接应用。
 
 ### `delete_all_by_feed_ids(feed_ids)`
 

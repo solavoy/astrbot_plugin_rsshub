@@ -233,31 +233,6 @@ async def test_plugin_settings_endpoint_ignores_history_retention_days_payload()
 
 
 @pytest.mark.asyncio
-async def test_handlers_endpoint_returns_registry_schema():
-    handler = _handler(polling_service=MagicMock())
-
-    app = Quart(__name__)
-    async with app.test_request_context(
-        "/astrbot_plugin_rsshub/handlers",
-        method="GET",
-    ):
-        response = await handler.handle_handlers()
-
-    payload = await response.get_json()
-    assert payload["ok"] is True
-    names = {item["name"] for item in payload["items"]}
-    assert names == {"ai_filter", "ai_transform"}
-    ai_filter = next(item for item in payload["items"] if item["name"] == "ai_filter")
-    assert any(field["type"] == "select" for field in ai_filter["schema"])
-    ai_transform = next(
-        item for item in payload["items"] if item["name"] == "ai_transform"
-    )
-    scope_field = next(
-        field for field in ai_transform["schema"] if field["key"] == "scope"
-    )
-    assert scope_field["default"] == "plaintext"
-
-
 @pytest.mark.asyncio
 async def test_plugin_settings_endpoint_ignores_removed_translation_payload():
     raw_config = _WritableConfig()
@@ -431,15 +406,6 @@ async def test_push_history_endpoint_filters_by_user_session_and_status():
                 content="hello",
                 raw_xml="<entry><p>Hello</p></entry>",
                 media_urls=["https://example.com/a.jpg"],
-                handler_trace=[
-                    {
-                        "id": "builtin.ai_filter.default",
-                        "name": "ai_filter",
-                        "status": "ok",
-                        "allow": False,
-                        "reason": "广告",
-                    }
-                ],
                 entry_title="日报",
                 entry_link="https://example.com/post",
                 entry_guid="guid-11",
@@ -492,7 +458,6 @@ async def test_push_history_endpoint_filters_by_user_session_and_status():
     assert payload["ok"] is True
     assert payload["total"] == 1
     assert payload["items"][0]["raw_xml"] == "<entry><p>Hello</p></entry>"
-    assert payload["items"][0]["handler_trace"][0]["name"] == "ai_filter"
     assert payload["items"][0]["fail_reason"] == "boom"
     assert payload["items"][0]["sub_id"] is None
     push_history_repo.get_by_user.assert_awaited_once_with(
@@ -525,7 +490,6 @@ async def test_push_history_endpoint_keeps_empty_fail_reason_empty_for_success()
                 content="ok",
                 raw_xml=None,
                 media_urls=None,
-                handler_trace=None,
                 entry_title="成功记录",
                 entry_link="https://example.com/post",
                 entry_guid="guid-12",
@@ -1899,7 +1863,7 @@ async def test_update_subscription_passes_real_user_id():
 
 
 @pytest.mark.asyncio
-async def test_list_subscriptions_returns_handlers_mode():
+async def test_list_subscriptions_returns_core_options():
     sub_repo = MagicMock()
     feed_repo = MagicMock()
     sub_repo.list_for_dashboard = AsyncMock(
@@ -1916,9 +1880,6 @@ async def test_list_subscriptions_returns_handlers_mode():
                 interval=15,
                 notify=1,
                 send_mode=0,
-                handlers_mode="disabled",
-                handlers=[],
-                get_handlers=lambda: [],
                 length_limit=300,
                 display_author=1,
                 display_via=0,
@@ -1968,7 +1929,8 @@ async def test_list_subscriptions_returns_handlers_mode():
 
     payload = await response.get_json()
     assert payload["ok"] is True
-    assert payload["items"][0]["handlers_mode"] == "disabled"
+    assert payload["items"][0]["title"] == "Daily"
+    assert "handlers_mode" not in payload["items"][0]
     sub_repo.list_for_dashboard.assert_awaited_once_with(
         user_ids=None,
         feed_ids=None,

@@ -113,16 +113,6 @@ class TestTOMLRoundtrip:
             title="Configured",
             tags="alerts,news",
             platform_name="telegram",
-            handlers_mode="override",
-            handlers=[
-                {
-                    "id": "builtin.ai_transform.default",
-                    "type": "builtin",
-                    "name": "ai_transform",
-                    "status": 1,
-                    "config": {"prompt": "总结为三条要点"},
-                }
-            ],
             interval=15,
             notify=1,
             send_mode=1,
@@ -157,8 +147,6 @@ class TestTOMLRoundtrip:
             "style": 3,
             "tags": "alerts,news",
             "title": "Configured",
-            "handlers": '[{"id":"builtin.ai_transform.default","type":"builtin","name":"ai_transform","status":1,"config":{"prompt":"总结为三条要点","scope":"plaintext"}}]',
-            "handlers_mode": "override",
         }
 
     def test_parse_legacy_send_mode_telegraph_is_migrated_to_auto(self) -> None:
@@ -242,46 +230,6 @@ class TestTOMLParsing:
         assert payload.records[0].link == "https://example.com/feed.xml"
         assert payload.records[0].feed_title is None
         assert payload.records[0].options == {}
-
-    def test_parse_handlers_mode_validation(self) -> None:
-        payload = parse_subscriptions_toml(
-            """
-            [[subscriptions]]
-            link = "https://example.com/feed.xml"
-            handlers_mode = "disabled"
-            """
-        )
-
-        assert payload.errors == []
-        assert payload.records[0].options["handlers_mode"] == "disabled"
-
-        invalid_payload = parse_subscriptions_toml(
-            """
-            [[subscriptions]]
-            link = "https://example.com/feed.xml"
-            handlers_mode = "invalid"
-            """
-        )
-
-        assert invalid_payload.records == []
-        assert invalid_payload.errors == [
-            "subscriptions[1].handlers_mode must be one of: inherit, override, disabled"
-        ]
-
-    def test_roundtrip_omits_default_inherit_handlers_mode(self) -> None:
-        record = make_export_record(
-            title="Configured",
-            handlers_mode="inherit",
-        )
-
-        content = serialize_subscriptions_to_toml(
-            user_id="user-001",
-            records=[record],
-        )
-        payload = parse_subscriptions_toml(content)
-
-        assert payload.errors == []
-        assert "handlers_mode" not in payload.records[0].options
 
     def test_parse_warns_on_version_mismatch(self) -> None:
         payload = parse_subscriptions_toml(

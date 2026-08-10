@@ -40,8 +40,3 @@ Feed 新鲜度按最近一次成功解析保存时间与订阅监控间隔分档
 
 点击历史行跳转相关订阅时，会按历史保存的 Feed 链接和用户精确筛选，不使用历史 `sub_id`，避免订阅删除后自增 ID 被新订阅复用造成误匹配。
 
-## Handler 编辑
-
-用户/订阅处理链编辑器优先读取 Web API `handlers/schema`，并在接口不可用时使用内置 fallback。当前支持启停、排序、添加内置 handler、删除、schema 字段编辑和原始 JSON 高级模式。
-
-旧版内置翻译、AI enrich 管道已移除。当前 handler 主要面向 `ai_filter` 与 `ai_transform`。

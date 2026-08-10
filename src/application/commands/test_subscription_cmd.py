@@ -17,14 +17,17 @@ except Exception:  # pragma: no cover - lightweight test fallback
         unified_msg_origin: str = ""
 
 
-from ...domain.entities.content_types import AudioContent, VideoContent
+from ...domain.entities.content_types import (
+    AudioContent,
+    EntryContentContext,
+    VideoContent,
+)
 from ...domain.repositories.feed_repository import FeedRepository
 from ...domain.repositories.subscription_repository import SubscriptionRepository
 from ..dto.feed_dto import FeedDTO
 from ..dto.result_dto import CommandResult
 from ..dto.subscription_dto import SubscriptionDTO
 from ..ports import FeedFetcher, FeedParser
-from ..services.content_handlers import EntryContentContext
 from ..services.feed_polling_service import FeedPollingService, FeedReadResult
 from ..services.html_parser import HTMLParser
 from ..services.notification_dispatcher import NotificationDispatcher, SendTarget

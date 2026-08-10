@@ -13,18 +13,12 @@ def test_conf_schema_is_scoped_to_startup_credentials_and_sender_strategies():
 
     assert set(schema) == {
         "basic_config",
-        "content_handlers",
         "http_config",
         "media",
         "sender_strategies",
     }
-    content_handler_items = schema["content_handlers"]["items"]
-    assert content_handler_items["ai_provider_id"]["_special"] == "select_provider"
-    assert content_handler_items["ai_provider_id"]["default"] == ""
-    assert content_handler_items["ai_persona_id"]["_special"] == "select_persona"
-    assert content_handler_items["ai_persona_id"]["default"] == ""
-
     assert "route_knowledge" not in schema
+    assert "content_handlers" not in schema
     assert "global_config" not in schema
     assert "pipeline" not in schema
     assert "translation" not in schema

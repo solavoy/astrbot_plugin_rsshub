@@ -41,7 +41,6 @@
 - 领域值、枚举语义和常量归属见 [`../project/domain-model.md`](../project/domain-model.md)。
 - formatter 只负责把解析后的 entry/media 格式化给 sender。
 - 不要把翻译、增强、route lookup 或订阅命令 fallback 放进 formatter。
-- AI 过滤属于 `ContentHandlerRuntime`。
 
 ## Plugin Pages 维护
 

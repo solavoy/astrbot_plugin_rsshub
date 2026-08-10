@@ -55,7 +55,7 @@ def build_history_tools(*, deps: LLMToolDeps, plugin_context) -> list[FunctionTo
             name="rss_list_push_history",
             description=(
                 "查看当前会话推送历史并返回 JSON。用于排查 success/skipped/failed、"
-                "fail_reason、media_urls、raw_xml 与 handler_trace。"
+                "fail_reason、media_urls 与 raw_xml。"
             ),
             parameters={
                 "type": "object",
@@ -81,7 +81,6 @@ def _dump_history_item(item: Any) -> dict[str, Any]:
         "content": item.content,
         "raw_xml": getattr(item, "raw_xml", None),
         "media_urls": item.media_urls,
-        "handler_trace": getattr(item, "handler_trace", None),
         "entry_title": item.entry_title,
         "entry_link": item.entry_link,
         "entry_guid": item.entry_guid,

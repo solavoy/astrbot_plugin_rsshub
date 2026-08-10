@@ -342,7 +342,6 @@ def test_heal_astrbot_plugin_config_projects_dirty_config_to_schema():
                 "ffmpeg_mirror": "bad",
                 "ffmpeg_mirror_custom_url": 123,
             },
-            "content_handlers": "bad",
             "sender_strategies": {
                 "telegram": False,
                 "aiocqhttp": True,
@@ -380,10 +379,7 @@ def test_heal_astrbot_plugin_config_projects_dirty_config_to_schema():
     assert healed["media"]["video_transcode"] is False
     assert healed["media"]["video_transcode_timeout"] == 120
     assert healed["media"]["table_to_image"] is True
-    assert healed["content_handlers"] == {
-        "ai_provider_id": "",
-        "ai_persona_id": "",
-    }
+    assert "content_handlers" not in healed
     assert healed["sender_strategies"] == {
         "enabled_platforms": ["telegram", "aiocqhttp", "qq_official"],
         "markdown_platforms": ["telegram"],
@@ -426,10 +422,6 @@ def test_heal_astrbot_plugin_config_returns_no_changes_for_clean_config():
         },
         "media": {
             key: value["default"] for key, value in schema["media"]["items"].items()
-        },
-        "content_handlers": {
-            key: value["default"]
-            for key, value in schema["content_handlers"]["items"].items()
         },
         "sender_strategies": {
             key: value["default"]
@@ -576,42 +568,6 @@ def test_config_save_writes_single_sender_strategy_template_list_with_enabled_pl
         "enabled_platforms": ["telegram", "qq_official"],
         "markdown_platforms": ["telegram"],
         "platform_strategies": [],
-    }
-
-
-def test_content_handler_ai_config_maps_to_runtime_settings_and_saves():
-    from astrbot_plugin_rsshub.src.infrastructure.config import (
-        RsshubPluginConfig,
-        build_application_settings,
-    )
-
-    class FakeAstrBotConfig(dict):
-        saved = False
-
-        def save_config(self):
-            self.saved = True
-
-    config = RsshubPluginConfig.from_astrbot_config(
-        {
-            "content_handlers": {
-                "ai_provider_id": "provider-1",
-                "ai_persona_id": "persona-1",
-            }
-        }
-    )
-
-    settings = build_application_settings(config)
-
-    assert settings.content_handlers.ai_provider_id == "provider-1"
-    assert settings.content_handlers.ai_persona_id == "persona-1"
-
-    astrbot_config = FakeAstrBotConfig()
-    config.save(astrbot_config)
-
-    assert astrbot_config.saved is True
-    assert astrbot_config["content_handlers"] == {
-        "ai_provider_id": "provider-1",
-        "ai_persona_id": "persona-1",
     }
 
 
@@ -1153,32 +1109,6 @@ async def test_user_settings_rejects_interval_below_configured_minimum(monkeypat
 
 
 @pytest.mark.asyncio
-async def test_user_settings_parses_and_persists_handlers():
-    from unittest.mock import AsyncMock
-
-    from astrbot_plugin_rsshub.src.application.commands.set_user_settings_cmd import (
-        SetUserSettingsCommand,
-    )
-    from astrbot_plugin_rsshub.src.domain.entities.user import User
-
-    repo = AsyncMock()
-    repo.get_by_id.return_value = User(id="u1")
-    repo.save.side_effect = lambda user: user
-
-    cmd = SetUserSettingsCommand(repo)
-    result = await cmd.execute(
-        user_id="u1",
-        settings={
-            "handlers": '[{"id":"builtin.xml_parse.default","type":"builtin","name":"xml_parse","status":1,"config":{}}]'
-        },
-    )
-
-    assert result.success is True
-    saved_user = repo.save.await_args.args[0]
-    assert saved_user.get_handlers() == []
-
-
-@pytest.mark.asyncio
 async def test_user_settings_rejects_removed_inherit_switch():
     from unittest.mock import AsyncMock
 
@@ -1212,51 +1142,6 @@ async def test_subscription_settings_reject_removed_inherit_switch():
 
     assert result.success is False
     assert "已移除" in result.message
-    repo.update_options.assert_not_awaited()
-
-
-@pytest.mark.asyncio
-async def test_subscription_settings_accepts_handlers_mode():
-    from unittest.mock import AsyncMock
-
-    from astrbot_plugin_rsshub.src.application.commands.update_subscription_cmd import (
-        UpdateSubscriptionCommand,
-    )
-    from astrbot_plugin_rsshub.src.domain.entities.subscription import Subscription
-
-    repo = AsyncMock()
-    repo.update_options.return_value = Subscription(
-        id=1,
-        user_id="u1",
-        feed_id=10,
-        handlers_mode="disabled",
-    )
-
-    cmd = UpdateSubscriptionCommand(repo)
-    result = await cmd.execute(sub_id=1, user_id="u1", handlers_mode="disabled")
-
-    assert result.success is True
-    repo.update_options.assert_awaited_once_with(
-        1,
-        "u1",
-        handlers_mode="disabled",
-    )
-
-
-@pytest.mark.asyncio
-async def test_subscription_settings_rejects_invalid_handlers_mode():
-    from unittest.mock import AsyncMock
-
-    from astrbot_plugin_rsshub.src.application.commands.update_subscription_cmd import (
-        UpdateSubscriptionCommand,
-    )
-
-    repo = AsyncMock()
-    cmd = UpdateSubscriptionCommand(repo)
-    result = await cmd.execute(sub_id=1, user_id="u1", handlers_mode="follow")
-
-    assert result.success is False
-    assert "handlers_mode" in result.message
     repo.update_options.assert_not_awaited()
 
 

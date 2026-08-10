@@ -9,7 +9,6 @@ import {
   getStats
 } from '../../js/api.js';
 import {
-  buildHandlersFromEditorState,
   normalizeTagValues,
   normalizeTextFilterValue,
   inheritedNumberToPayload,
@@ -232,11 +231,6 @@ export const subscriptionsModule = {
         options.target_session = this.editForm.target_session;
       }
       options.length_limit = inheritedNumberToPayload(this.editForm.length_limit_control);
-      options.handlers_mode = this.editForm.handlers_mode || 'inherit';
-      options.handlers =
-        options.handlers_mode === 'override'
-          ? buildHandlersFromEditorState(this.editForm)
-          : [];
       options.state = this.editForm.state_ ? 1 : 0;
       options.notify = this.editForm.notify;
       options.send_mode = this.editForm.send_mode;

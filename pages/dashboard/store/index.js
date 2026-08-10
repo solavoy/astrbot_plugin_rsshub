@@ -12,7 +12,6 @@ import { feedsModule } from './modules/feeds.js';
 import { pushHistoryModule } from './modules/push-history.js';
 import { settingsModule } from './modules/settings.js';
 import { dataManagementModule } from './modules/data-management.js';
-import { handlersModule } from './modules/handlers.js';
 import { panelsModule } from './modules/panels.js';
 import { overlayModule } from './modules/overlays.js';
 
@@ -30,7 +29,6 @@ export function createDashboardStore(PetiteVue) {
     ...pushHistoryModule,
     ...settingsModule,
     ...dataManagementModule,
-    ...handlersModule,
     ...panelsModule,
     ...overlayModule,
     formatDate,

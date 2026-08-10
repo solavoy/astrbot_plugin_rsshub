@@ -9,7 +9,6 @@ from __future__ import annotations
 from sqlalchemy import delete
 from sqlmodel import asc, or_, select
 
-from ...domain.entities.handlers import dump_handlers, handlers_json
 from ...domain.entities.subscription import Subscription
 from ..utils import get_logger
 from .database import get_database
@@ -205,12 +204,6 @@ class SubscriptionRepositoryImpl:
             if not orm:
                 return None
             for key, value in kwargs.items():
-                if key == "handlers":
-                    orm.handlers = handlers_json(value)
-                    continue
-                if key == "handlers_mode":
-                    orm.handlers_mode = str(value or "").strip().lower()
-                    continue
                 if hasattr(orm, key):
                     setattr(orm, key, value)
             session.add(orm)
@@ -234,8 +227,6 @@ class SubscriptionRepositoryImpl:
             next_check_time=orm.next_check_time,
             notify=orm.notify,
             send_mode=orm.send_mode,
-            handlers_mode=orm.handlers_mode,
-            handlers=dump_handlers(orm.handlers),
             length_limit=orm.length_limit,
             display_author=orm.display_author,
             display_via=orm.display_via,
@@ -263,8 +254,6 @@ class SubscriptionRepositoryImpl:
             next_check_time=sub.next_check_time,
             notify=sub.notify,
             send_mode=sub.send_mode,
-            handlers_mode=sub.handlers_mode,
-            handlers=handlers_json(sub.get_handlers()),
             length_limit=sub.length_limit,
             display_author=sub.display_author,
             display_via=sub.display_via,

@@ -43,43 +43,6 @@ export function prettyJson(value) {
   }
 }
 
-export function cloneJsonValue(value) {
-  if (value === undefined || value === null) return value;
-  if (typeof value !== 'object') return value;
-  try {
-    return JSON.parse(JSON.stringify(value));
-  } catch {
-    return Array.isArray(value) ? [...value] : { ...value };
-  }
-}
-
-export function normalizeHandlers(handlers) {
-  if (!Array.isArray(handlers)) return [];
-  return handlers
-    .filter((item) => item && typeof item === 'object')
-    .map((item) => ({
-      id: String(item.id || '').trim(),
-      type: String(item.type || 'builtin').trim() || 'builtin',
-      name: String(item.name || '').trim(),
-      status: Number.isFinite(Number(item.status)) ? Number(item.status) : -100,
-      config: item.config && typeof item.config === 'object' ? { ...item.config } : {},
-    }))
-    .filter((item) => item.id && item.name);
-}
-
-export function handlersToEditorState(handlers) {
-  const normalized = normalizeHandlers(handlers);
-  return {
-    handlers: normalized,
-    handlers_advanced: true,
-    handlers_json: JSON.stringify(normalized, null, 2),
-  };
-}
-
-export function buildHandlersFromEditorState(form) {
-  return normalizeHandlers(JSON.parse(form.handlers_json || '[]'));
-}
-
 export function createTagFilter() {
   return {
     values: [],
@@ -147,8 +110,6 @@ export function createEmptyEditForm() {
     display_entry_tags: -100,
     style: -100,
     display_media: -100,
-    handlers_mode: 'inherit',
-    handlers_json: '[]',
   };
 }
 
@@ -175,8 +136,6 @@ export function createEditFormFromSub(sub) {
     display_entry_tags: sub.display_entry_tags ?? -100,
     style: sub.style ?? -100,
     display_media: sub.display_media ?? -100,
-    handlers_mode: sub.handlers_mode || 'inherit',
-    ...handlersToEditorState(sub.handlers),
   };
 }
 
@@ -196,7 +155,6 @@ export function createEmptyUserEditForm() {
     display_entry_tags: -100,
     style: -100,
     display_media: -100,
-    handlers_json: '[]',
   };
 }
 
@@ -290,7 +248,6 @@ export function normalizePushHistoryItem(item) {
   return {
     ...item,
     media_urls: Array.isArray(item?.media_urls) ? item.media_urls : [],
-    handler_trace: Array.isArray(item?.handler_trace) ? item.handler_trace : [],
   };
 }
 
@@ -328,15 +285,6 @@ export function createEmptyPushHistoryFilters() {
   };
 }
 
-export function traceStatusText(step) {
-  if (step?.allow === false) return '已过滤';
-  return String(step?.status || step?.result || 'ok');
-}
-
-export function traceReasonText(step) {
-  return String(step?.reason || step?.message || step?.error || '').trim();
-}
-
 export function pieSegments(items) {
   const palette = ['#3c96ca', '#34d399', '#f59e0b', '#ef4444', '#8b5cf6', '#14b8a6', '#64748b'];
   const normalized = normalizeBreakdownItems(items);
@@ -355,43 +303,4 @@ export function pieSegments(items) {
     cursor += ratio * 100;
     return segment;
   });
-}
-
-export function normalizeHandlerField(field) {
-  const rawOptions = Array.isArray(field?.options) ? field.options : [];
-  const options = rawOptions.map((item) => {
-    if (item && typeof item === 'object') {
-      return {
-        label: String(item.label || item.name || item.value || '').trim(),
-        value: String(item.value || item.label || item.name || '').trim(),
-      };
-    }
-    const value = String(item || '').trim();
-    return { label: value, value };
-  }).filter((item) => item.value);
-  return {
-    key: String(field?.key || field?.name || '').trim(),
-    type: String(field?.type || 'string').trim(),
-    label: String(field?.label || field?.title || field?.key || field?.name || '').trim(),
-    description: String(field?.description || '').trim(),
-    required: Boolean(field?.required),
-    default: cloneJsonValue(field?.default),
-    options,
-  };
-}
-
-export function normalizeHandlerRegistryItem(item) {
-  const fields = Array.isArray(item?.fields)
-    ? item.fields
-    : Array.isArray(item?.schema)
-      ? item.schema
-      : [];
-  return {
-    type: String(item?.type || 'builtin').trim() || 'builtin',
-    name: String(item?.name || '').trim(),
-    title: String(item?.display_name || item?.title || item?.name || '未命名处理器').trim(),
-    description: String(item?.description || '').trim(),
-    default_enabled: Boolean(item?.default_enabled),
-    fields: fields.map(normalizeHandlerField).filter((field) => field.key),
-  };
 }

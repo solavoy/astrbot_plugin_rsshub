@@ -237,34 +237,6 @@ def parse_subscriptions_toml(content: str) -> SubscriptionImportPayload:
             value = raw.get(key)
             if value is None:
                 continue
-            if key == "handlers":
-                if isinstance(value, str):
-                    normalized = value.strip()
-                    if normalized:
-                        record.options[key] = normalized
-                        continue
-                if isinstance(value, list):
-                    record.options[key] = json.dumps(value, ensure_ascii=False)
-                    continue
-                payload.errors.append(
-                    f"subscriptions[{i}].{key} must be a string or array"
-                )
-                has_error = True
-                continue
-            if key == "handlers_mode":
-                if not isinstance(value, str):
-                    payload.errors.append(f"subscriptions[{i}].{key} must be a string")
-                    has_error = True
-                    continue
-                normalized = value.strip().lower()
-                if normalized not in {"inherit", "override", "disabled"}:
-                    payload.errors.append(
-                        f"subscriptions[{i}].{key} must be one of: inherit, override, disabled"
-                    )
-                    has_error = True
-                    continue
-                record.options[key] = normalized
-                continue
             if not isinstance(value, str):
                 payload.errors.append(f"subscriptions[{i}].{key} must be a string")
                 has_error = True

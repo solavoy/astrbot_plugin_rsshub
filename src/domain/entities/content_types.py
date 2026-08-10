@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 from abc import ABC
+from dataclasses import dataclass
 from urllib.parse import urlparse
 
 from pydantic import BaseModel, Field
@@ -162,6 +163,23 @@ class LayoutFragment(BaseModel):
     local_path: str = Field(default="", description="Generated local media path")
     name: str = Field(default="", description="File name")
     fallback_text: str = Field(default="", description="Media send failure fallback")
+
+
+@dataclass(frozen=True, slots=True)
+class EntryContentContext:
+    """Raw entry payload before formatting for one subscription."""
+
+    title: str
+    summary: str
+    content: str
+    link: str
+    author: str
+    feed_title: str
+    feed_link: str
+    raw_xml: str = ""
+    media_urls: tuple[str, ...] = ()
+    media_items: tuple[tuple[str, str], ...] = ()
+    layout: tuple[LayoutFragment, ...] = ()
 
 
 class ParsedResult(BaseModel):

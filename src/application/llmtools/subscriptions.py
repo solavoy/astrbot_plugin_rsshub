@@ -116,7 +116,7 @@ def build_subscription_tools(
         ),
         make_tool(
             name="rss_list_subscriptions",
-            description="查看当前会话订阅列表；修改订阅选项、设置订阅级 handlers 或退订前优先调用它获取 sub_id。",
+            description="查看当前会话订阅列表；修改订阅选项或退订前优先调用它获取 sub_id。",
             parameters={
                 "type": "object",
                 "properties": {

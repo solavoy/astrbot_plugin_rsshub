@@ -316,7 +316,6 @@ async def ensure_push_history_schema(conn) -> list[str]:
         "source_type": "ALTER TABLE rsshub_push_history ADD COLUMN source_type VARCHAR(16) NOT NULL DEFAULT 'feed'",
         "source_key": "ALTER TABLE rsshub_push_history ADD COLUMN source_key VARCHAR(255)",
         "raw_xml": "ALTER TABLE rsshub_push_history ADD COLUMN raw_xml TEXT",
-        "handler_trace": "ALTER TABLE rsshub_push_history ADD COLUMN handler_trace JSON",
     }
     for column, sql in required_columns.items():
         if column in columns:
@@ -408,78 +407,6 @@ async def ensure_user_rows(conn) -> int:
     if inserted > 0:
         logger.info("数据库 schema 自愈: 补齐缺失用户记录 %s 个", inserted)
     return max(0, inserted)
-
-
-async def ensure_profile_schema(conn) -> list[str]:
-    """补齐当前用户/订阅配置表运行必需字段。
-
-    v2 发布前曾压缩开发期迁移脚本。已有测试库可能已经记录 V1，
-    但实际 `rsshub_sub` 表仍缺少后续基线字段；这里保留轻量自愈，
-    避免查询 ORM 当前模型时因缺列失败。
-    """
-
-    async def _table_exists(table: str) -> bool:
-        result = await conn.exec_driver_sql(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
-            (table,),
-        )
-        return result.fetchone() is not None
-
-    async def _column_names(table: str) -> set[str]:
-        result = await conn.exec_driver_sql(f"PRAGMA table_info({table})")
-        return {str(row[1]) for row in result.fetchall()}
-
-    applied: list[str] = []
-
-    if await _table_exists("rsshub_user"):
-        user_columns = await _column_names("rsshub_user")
-        if "handlers" not in user_columns:
-            await conn.exec_driver_sql(
-                "ALTER TABLE rsshub_user ADD COLUMN handlers TEXT NOT NULL DEFAULT '[]'"
-            )
-            applied.append("rsshub_user.handlers")
-            logger.info("数据库 schema 自愈: 为 rsshub_user 添加 handlers 字段")
-
-    if await _table_exists("rsshub_sub"):
-        sub_columns = await _column_names("rsshub_sub")
-        if "handlers" not in sub_columns:
-            await conn.exec_driver_sql(
-                "ALTER TABLE rsshub_sub ADD COLUMN handlers TEXT NOT NULL DEFAULT '[]'"
-            )
-            applied.append("rsshub_sub.handlers")
-            logger.info("数据库 schema 自愈: 为 rsshub_sub 添加 handlers 字段")
-            sub_columns.add("handlers")
-        if "handlers_mode" not in sub_columns:
-            await conn.exec_driver_sql(
-                "ALTER TABLE rsshub_sub ADD COLUMN handlers_mode TEXT NOT NULL DEFAULT 'inherit'"
-            )
-            await conn.exec_driver_sql(
-                """
-                UPDATE rsshub_sub
-                SET handlers_mode = CASE
-                    WHEN handlers IS NULL THEN 'inherit'
-                    WHEN json_valid(handlers) AND json_array_length(handlers) = 0 THEN 'inherit'
-                    WHEN NOT json_valid(handlers) AND REPLACE(
-                        REPLACE(
-                            REPLACE(
-                                REPLACE(TRIM(COALESCE(handlers, '[]')), ' ', ''),
-                                CHAR(10),
-                                ''
-                            ),
-                            CHAR(13),
-                            ''
-                        ),
-                        CHAR(9),
-                        ''
-                    ) IN ('', '[]') THEN 'inherit'
-                    ELSE 'override'
-                END
-                """
-            )
-            applied.append("rsshub_sub.handlers_mode")
-            logger.info("数据库 schema 自愈: 为 rsshub_sub 添加 handlers_mode 字段")
-
-    return applied
 
 
 async def cleanup_legacy_translation_tables(conn) -> list[str]:

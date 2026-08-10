@@ -41,7 +41,6 @@ async def test_save_updates_existing_without_insert(monkeypatch):
         interval=-100,
         notify=-100,
         send_mode=-100,
-        handlers="[]",
         length_limit=-100,
         display_author=-100,
         display_via=-100,
@@ -67,15 +66,6 @@ async def test_save_updates_existing_without_insert(monkeypatch):
     repo = UserRepositoryImpl()
     user = User(id="u1")
     user.notify = 1
-    user.handler_specs = [
-        {
-            "id": "builtin.xml_parse.default",
-            "type": "builtin",
-            "name": "xml_parse",
-            "status": 1,
-            "config": {},
-        }
-    ]
 
     saved = await repo.save(user)
 
@@ -84,4 +74,3 @@ async def test_save_updates_existing_without_insert(monkeypatch):
     session.refresh.assert_awaited_once_with(existing)
     assert saved.id == "u1"
     assert saved.notify == 1
-    assert saved.get_handlers() == []

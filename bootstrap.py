@@ -35,7 +35,6 @@ from .src.application.queries import (
     SearchFeedsQuery,
 )
 from .src.application.services.agent_xml_push_service import AgentXmlPushService
-from .src.application.services.content_handlers import ContentHandlerRuntime
 from .src.application.services.feed_polling_service import FeedPollingService
 from .src.application.services.notification_dispatcher import NotificationDispatcher
 from .src.application.services.session_push_queue import SessionPushQueue
@@ -181,7 +180,6 @@ async def create_plugin_runtime(
             app_settings=app_settings,
             sender_provider=sender_provider,
             push_job_queue=queue,
-            context=context,
         )
         web_api = _register_web_api(context, plugin_config, deps, config)
         scheduler = await _start_scheduler(
@@ -416,7 +414,6 @@ async def _build_dependencies(
     app_settings: ApplicationSettings,
     sender_provider: InfrastructureMessageSenderProvider,
     push_job_queue: SessionPushQueue,
-    context: Context | None = None,
 ) -> tuple[PluginDeps, NotificationDispatcher]:
     feed_repo = get_feed_repository()
     sub_repo = get_subscription_repository()
@@ -429,10 +426,6 @@ async def _build_dependencies(
         push_history_repo=push_history_repo,
         sender_provider=sender_provider,
         push_job_queue=push_job_queue,
-        content_handler_runtime=ContentHandlerRuntime(
-            context=context,
-            settings=app_settings.content_handlers,
-        ),
         subscription_defaults=app_settings.subscription_defaults,
         basic_settings=app_settings.basic,
     )

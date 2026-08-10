@@ -6,7 +6,6 @@
 """
 
 from datetime import datetime, timezone
-from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -69,10 +68,6 @@ class PushHistory(BaseModel):
     content: str = Field(default="", description="格式化后的消息内容")
     raw_xml: str | None = Field(default=None, description="XML 推送原始内容")
     media_urls: list[str] | None = Field(default=None, description="媒体URL列表")
-    handler_trace: list[dict[str, Any]] | None = Field(
-        default=None,
-        description="内容 handler 执行摘要",
-    )
 
     entry_title: str = Field(default="", max_length=1024, description="条目标题")
     entry_link: str = Field(default="", max_length=4096, description="条目链接")

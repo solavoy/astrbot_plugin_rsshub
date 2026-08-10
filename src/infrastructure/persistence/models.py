@@ -50,7 +50,6 @@ class UserORM(RSSHubBaseModel, table=True):
         default=INHERIT_VALUE,
         description="发送模式: -1=仅链接, 0=自动, 1=直接发送",
     )
-    handlers: str = Field(default="[]", description="内容处理 handlers JSON")
     length_limit: int = Field(default=INHERIT_VALUE, description="长度限制")
     display_author: int = Field(
         default=INHERIT_VALUE, description="显示作者: -1=禁用, 0=自动, 1=强制"
@@ -152,12 +151,6 @@ class SubORM(RSSHubBaseModel, table=True):
     display_entry_tags: int = Field(default=INHERIT_VALUE, description="显示标签")
     style: int = Field(default=INHERIT_VALUE, description="推送排版策略")
     display_media: int = Field(default=INHERIT_VALUE, description="显示媒体")
-    handlers_mode: str = Field(
-        default="inherit",
-        max_length=16,
-        description="handlers 继承模式",
-    )
-    handlers: str = Field(default="[]", description="内容处理 handlers JSON")
 
     created_at: datetime = Field(
         default_factory=lambda: datetime.now(timezone.utc),
@@ -192,9 +185,6 @@ class PushHistoryORM(RSSHubBaseModel, table=True):
     raw_xml: str | None = Field(default=None, description="XML 推送原始内容")
     media_urls: list[str] | None = Field(
         default=None, sa_column=Column(JSON), description="媒体URL列表"
-    )
-    handler_trace: list[dict[str, Any]] | None = Field(
-        default=None, sa_column=Column(JSON), description="handler 执行摘要"
     )
 
     entry_title: str = Field(default="", max_length=1024, description="条目标题")

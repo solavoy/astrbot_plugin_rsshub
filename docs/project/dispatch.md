@@ -33,7 +33,6 @@
 flowchart TD
   A["标准化 entry"] --> B["解析 subscription / user / global 生效配置"]
   B --> C["创建 pending push_history"]
-  C --> D["执行 ContentHandlerRuntime"]
   D --> E{"handler 是否允许发送"}
   E -->|"allow=false"| F["写 skipped history"]
   E -->|"allow=true 或增强失败放行"| G["格式化最终文本与媒体"]

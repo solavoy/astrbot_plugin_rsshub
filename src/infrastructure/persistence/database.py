@@ -25,7 +25,6 @@ from sqlmodel import SQLModel
 from ..utils import get_logger
 from .migrations import (
     cleanup_legacy_translation_tables,
-    ensure_profile_schema,
     ensure_push_history_schema,
     ensure_user_rows,
     run_migrations,
@@ -93,7 +92,6 @@ class DatabaseManager:
             await conn.run_sync(RSSHubBaseModel.metadata.create_all)
             await run_migrations(conn)
             await cleanup_legacy_translation_tables(conn)
-            await ensure_profile_schema(conn)
             await ensure_push_history_schema(conn)
             await ensure_user_rows(conn)
 

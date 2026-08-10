@@ -19,7 +19,12 @@ from itertools import chain
 from typing import Any
 from urllib.parse import parse_qsl, urlencode, urljoin, urlparse, urlunparse
 
-from ...domain.entities.content_types import AudioContent, FileContent, VideoContent
+from ...domain.entities.content_types import (
+    AudioContent,
+    EntryContentContext,
+    FileContent,
+    VideoContent,
+)
 from ...domain.entities.feed import Feed, normalize_entry_hashes
 from ...domain.repositories.feed_repository import FeedRepository
 from ...domain.repositories.subscription_repository import SubscriptionRepository
@@ -32,7 +37,6 @@ from ...infrastructure.pipeline import (
 from ...infrastructure.pipeline.entry_formatter import normalize_plain_text
 from ...infrastructure.utils import get_logger
 from ..ports import FeedFetcherFactory, FeedParser, MediaFingerprintService
-from .content_handlers import EntryContentContext
 from .html_parser import HTMLParser
 from .notification_dispatcher import NotificationDispatcher
 

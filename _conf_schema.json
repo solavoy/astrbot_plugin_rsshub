@@ -371,26 +371,5 @@
         }
       }
     }
-  },
-  "content_handlers": {
-    "type": "object",
-    "description": "内容处理器全局 AI 配置",
-    "hint": "供内置 ai_filter / ai_transform 使用；API Key 仍由 AstrBot Provider 管理，插件只保存 Provider 与人格 ID",
-    "items": {
-      "ai_provider_id": {
-        "type": "string",
-        "description": "AI 内容处理 Provider",
-        "_special": "select_provider",
-        "hint": "留空时使用当前会话正在使用的对话模型 Provider",
-        "default": ""
-      },
-      "ai_persona_id": {
-        "type": "string",
-        "description": "AI 内容处理人格",
-        "_special": "select_persona",
-        "hint": "可选；选择后仅把该人格 system prompt 注入内置 AI handler，不改变会话人格",
-        "default": ""
-      }
-    }
   }
 }

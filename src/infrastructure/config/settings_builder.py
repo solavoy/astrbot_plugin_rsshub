@@ -27,7 +27,6 @@ from ...shared.constants import (
 from .models import (
     ApplicationSettings,
     BasicSettings,
-    ContentHandlerSettings,
     FeedFetchSettings,
     HttpSettings,
     MediaPlatformLimits,
@@ -255,13 +254,6 @@ def _build_sender_strategy_settings(value: Any) -> SenderStrategySettings:
     )
 
 
-def _build_content_handler_settings(value: Any) -> ContentHandlerSettings:
-    return ContentHandlerSettings(
-        ai_provider_id=str(_get_value(value, "ai_provider_id", "") or ""),
-        ai_persona_id=str(_get_value(value, "ai_persona_id", "") or ""),
-    )
-
-
 def _media_cache_ttl_seconds(media_cfg: Any) -> int:
     # 与 schema slider 下界保持一致；防止绕过 AstrBot schema 直接构造出 0/负数 TTL。
     raw_value = _get_value(media_cfg, "cache_ttl_seconds")
@@ -286,7 +278,6 @@ def build_application_settings(config: Any) -> ApplicationSettings:
     http_cfg = _get_value(config, "http_config")
     global_cfg = _get_value(config, "global_config")
     media_cfg = _get_value(config, "media")
-    content_handlers_cfg = _get_value(config, "content_handlers")
     sender_cfg = _get_value(config, "sender_strategies")
 
     http = HttpSettings(
@@ -439,7 +430,6 @@ def build_application_settings(config: Any) -> ApplicationSettings:
             style=str(_get_value(global_cfg, "style", "auto") or "auto"),
             display_media=bool(_get_value(global_cfg, "display_media", True)),
         ),
-        content_handlers=_build_content_handler_settings(content_handlers_cfg),
         sender_strategies=_build_sender_strategy_settings(sender_cfg),
         http=http,
         media_platform_limits=media_platform_limits,

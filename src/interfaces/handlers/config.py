@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from astrbot.api.event import AstrMessageEvent
 
-from ...domain.entities.handlers import parse_handlers_input
 from ...infrastructure.config import validate_interval_value
 
 SESSION_DEFAULT_KV_PREFIX = "rsshub_session_defaults_"
@@ -19,7 +18,6 @@ SESSION_DEFAULT_KEYS = {
     "display_entry_tags",
     "style",
     "display_media",
-    "handlers",
     "title",
     "tags",
 }
@@ -161,12 +159,7 @@ async def handle_sub_set_session(
         return {"plain": f"未知选项: {option_key}"}
 
     parsed_value = value
-    if option_key == "handlers":
-        try:
-            parsed_value = parse_handlers_input(value)
-        except ValueError as exc:
-            return {"plain": str(exc)}
-    elif option_key not in {"title", "tags"}:
+    if option_key not in {"title", "tags"}:
         try:
             if option_key == "interval":
                 parsed_value = validate_interval_value(

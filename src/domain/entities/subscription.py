@@ -6,21 +6,10 @@
 """
 
 from datetime import datetime, timezone
-from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field
 
 from ...shared.constants import INHERIT_VALUE
-from .handlers import dump_handlers, normalize_handlers
-
-HANDLERS_MODE_INHERIT = "inherit"
-HANDLERS_MODE_OVERRIDE = "override"
-HANDLERS_MODE_DISABLED = "disabled"
-SUPPORTED_HANDLERS_MODES = {
-    HANDLERS_MODE_INHERIT,
-    HANDLERS_MODE_OVERRIDE,
-    HANDLERS_MODE_DISABLED,
-}
 
 
 class Subscription(BaseModel):
@@ -62,59 +51,12 @@ class Subscription(BaseModel):
     display_entry_tags: int = Field(default=INHERIT_VALUE, description="显示标签")
     style: int = Field(default=INHERIT_VALUE, description="推送排版策略")
     display_media: int = Field(default=INHERIT_VALUE, description="显示媒体")
-    handlers_mode: str = Field(
-        default=HANDLERS_MODE_INHERIT,
-        description="handlers 继承模式: inherit/override/disabled",
-    )
-    handler_specs: Any = Field(
-        default_factory=list,
-        alias="handlers",
-        description="内容处理 handlers",
-    )
     created_at: datetime = Field(
         default_factory=lambda: datetime.now(timezone.utc), description="创建时间"
     )
     updated_at: datetime = Field(
         default_factory=lambda: datetime.now(timezone.utc), description="更新时间"
     )
-
-    @model_validator(mode="before")
-    @classmethod
-    def _normalize_handlers_field(cls, value: Any) -> Any:
-        if isinstance(value, dict):
-            payload = dict(value)
-            raw_handlers = payload.get("handlers", payload.get("handler_specs"))
-            payload["handler_specs"] = dump_handlers(normalize_handlers(raw_handlers))
-            handlers_mode = (
-                str(payload.get("handlers_mode", HANDLERS_MODE_INHERIT) or "")
-                .strip()
-                .lower()
-            )
-            payload["handlers_mode"] = (
-                handlers_mode
-                if handlers_mode in SUPPORTED_HANDLERS_MODES
-                else HANDLERS_MODE_INHERIT
-            )
-            return payload
-        return value
-
-    def get_handlers(self) -> list[dict[str, Any]]:
-        return dump_handlers(self.handler_specs)
-
-    def set_handlers(self, value: Any) -> "Subscription":
-        self.handler_specs = dump_handlers(normalize_handlers(value))
-        self.updated_at = datetime.now(timezone.utc)
-        return self
-
-    def clear_handlers(self) -> "Subscription":
-        self.handler_specs = []
-        self.updated_at = datetime.now(timezone.utc)
-        return self
-
-    @property
-    def handlers(self) -> list[dict[str, Any]]:
-        """Backward-compatible read-only alias."""
-        return self.get_handlers()
 
     def is_active(self) -> bool:
         """检查订阅是否启用"""
@@ -156,7 +98,3 @@ class Subscription(BaseModel):
         if value == INHERIT_VALUE:
             return None
         return value
-
-    def get_effective_handlers(self) -> list[dict[str, Any]]:
-        """获取规范化后的 handlers。"""
-        return self.get_handlers()

@@ -31,24 +31,6 @@ export const mainPanelTemplate = String.raw`
           <div class="input-wrapper"><input type="text" v-model="editForm.target_session" /></div>
         </div>
         <div class="form-group">
-          <label>内容处理链</label>
-          <div class="handler-editor">
-            <div class="setting-row">
-              <span class="setting-label">处理链模式</span>
-              <select class="select-input" v-model="editForm.handlers_mode">
-                <option value="inherit">继承用户设置</option>
-                <option value="override">使用订阅设置</option>
-                <option value="disabled">禁用全部处理链</option>
-              </select>
-            </div>
-            <div v-if="editForm.handlers_mode === 'override'" class="handler-json">
-              <textarea v-model="editForm.handlers_json" rows="10"></textarea>
-              <button type="button" class="btn btn-secondary btn-small" @click="applyHandlersJson(editForm)">应用 JSON</button>
-            </div>
-            <div v-else class="handler-empty">{{ editForm.handlers_mode === 'inherit' ? '当前订阅继承用户处理链' : '当前订阅禁用全部处理链' }}</div>
-          </div>
-        </div>
-        <div class="form-group">
           <label>刷新间隔（分钟）</label>
           <div class="inherit-control">
             <select class="select-input" v-model="editForm.interval_control.mode">
@@ -140,22 +122,6 @@ export const mainPanelTemplate = String.raw`
         <div class="detail-row"><span class="detail-label">原始 XML</span><span class="detail-value cell-wrap">{{ historyDetail.raw_xml || '-' }}</span></div>
         <div class="detail-row"><span class="detail-label">媒体</span><span class="detail-value cell-wrap">{{ prettyJson(historyDetail.media_urls) }}</span></div>
         <div class="detail-row"><span class="detail-label">错误</span><span class="detail-value error-block">{{ historyDetail.fail_reason || '-' }}</span></div>
-      </div>
-      <div class="panel-section">
-        <h4>调用链</h4>
-        <div v-if="historyTraceSteps().length === 0" class="empty-state"><p>暂无 handler 记录</p></div>
-        <div v-else>
-          <div v-for="(step, index) in historyTraceSteps()" :key="step.id || step.name || index" class="entry-item">
-            <div class="entry-title">{{ step.name || step.id || '未知 Handler' }}</div>
-            <div class="entry-meta">状态: {{ historyTraceStatus(step) }} · {{ step.type || 'builtin' }}</div>
-            <div class="entry-summary" v-if="historyTraceReason(step)">{{ historyTraceReason(step) }}</div>
-            <div class="entry-summary" v-if="step.config">{{ prettyJson(step.config) }}</div>
-          </div>
-          <div class="trace-raw-block">
-            <div class="trace-raw-title">原始 Trace JSON</div>
-            <pre class="trace-raw-json">{{ prettyJson(historyDetail.handler_trace) }}</pre>
-          </div>
-        </div>
       </div>
     </div>
 

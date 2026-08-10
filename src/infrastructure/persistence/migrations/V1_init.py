@@ -46,7 +46,6 @@ async def upgrade(conn) -> None:
                 interval INTEGER NOT NULL DEFAULT -100,
                 notify INTEGER NOT NULL DEFAULT -100,
                 send_mode INTEGER NOT NULL DEFAULT -100,
-                handlers TEXT NOT NULL DEFAULT '[]',
                 length_limit INTEGER NOT NULL DEFAULT -100,
                 display_author INTEGER NOT NULL DEFAULT -100,
                 display_via INTEGER NOT NULL DEFAULT -100,
@@ -99,8 +98,6 @@ async def upgrade(conn) -> None:
                 next_check_time DATETIME,
                 notify INTEGER NOT NULL DEFAULT -100,
                 send_mode INTEGER NOT NULL DEFAULT -100,
-                handlers_mode TEXT NOT NULL DEFAULT 'inherit',
-                handlers TEXT NOT NULL DEFAULT '[]',
                 length_limit INTEGER NOT NULL DEFAULT -100,
                 display_author INTEGER NOT NULL DEFAULT -100,
                 display_via INTEGER NOT NULL DEFAULT -100,
@@ -131,7 +128,6 @@ async def upgrade(conn) -> None:
                 content VARCHAR NOT NULL DEFAULT '',
                 raw_xml TEXT,
                 media_urls JSON,
-                handler_trace JSON,
                 entry_title VARCHAR(1024) NOT NULL DEFAULT '',
                 entry_link VARCHAR(4096) NOT NULL DEFAULT '',
                 entry_guid VARCHAR(512),
@@ -180,15 +176,6 @@ async def upgrade(conn) -> None:
             """
         )
         logger.info("迁移 V1: 为 rsshub_push_history 添加 raw_xml 字段")
-
-    if not await _column_exists("rsshub_push_history", "handler_trace"):
-        await conn.exec_driver_sql(
-            """
-            ALTER TABLE rsshub_push_history
-            ADD COLUMN handler_trace JSON
-            """
-        )
-        logger.info("迁移 V1: 为 rsshub_push_history 添加 handler_trace 字段")
 
     if not await _index_exists("idx_rsshub_push_history_scope_guid"):
         await conn.exec_driver_sql(

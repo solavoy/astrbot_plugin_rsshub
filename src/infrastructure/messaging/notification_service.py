@@ -9,12 +9,12 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from ...application.ports import MessageSenderProvider
-from ...application.services.content_handlers import EntryContentContext
 from ...application.services.notification_dispatcher import (
     NotificationDispatcher,
     SendTarget,
 )
 from ...application.services.session_push_queue import SessionPushQueue
+from ...domain.entities.content_types import EntryContentContext
 from ...domain.repositories.push_history_repository import PushHistoryRepository
 from ...domain.repositories.subscription_repository import SubscriptionRepository
 from ..pipeline import EffectivePushOptions, EntryFormatInput, EntryTextFormatter

@@ -23,10 +23,6 @@
 
 ## 章节索引
 
-### plan
-
-- [`PLAN.md`](./PLAN.md): 当前剩余计划草案，重点是 Stage 3 处理器内部通信与扩展运行时边界
-
 ### project
 
 - [`project/overview.md`](./project/overview.md): 项目定位、边界、设计目标与核心取舍
@@ -36,7 +32,6 @@
 - [`project/polling.md`](./project/polling.md): Feed 轮询、条件抓取、去重窗口和 dispatch 输入构造
 - [`project/dispatch.md`](./project/dispatch.md): 分发、push history 生命周期、失败分类与重试语义
 - [`project/platforms.md`](./project/platforms.md): 平台发送差异、媒体预下载、代理、缓存与常量放置规则
-- [`project/handlers.md`](./project/handlers.md): handler registry、继承、执行顺序、AI filter/transform 与 trace
 - [`project/formatting.md`](./project/formatting.md): `EntryTextFormatter`、`MessageComponentSorter` 与平台兼容顺序
 - [`project/roadmap.md`](./project/roadmap.md): 当前状态与后续演进方向
 

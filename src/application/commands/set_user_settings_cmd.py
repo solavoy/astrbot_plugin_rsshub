@@ -7,7 +7,6 @@ from __future__ import annotations
 
 from typing import Any
 
-from ...domain.entities.handlers import parse_handlers_input
 from ...domain.repositories.user_repository import UserRepository
 from ...infrastructure.config import MAX_INTERVAL_MINUTES, validate_interval_value
 from ...shared.constants import INHERIT_VALUE
@@ -29,7 +28,6 @@ VALID_SETTINGS = {
 }
 INHERITABLE_SETTINGS = set(VALID_SETTINGS) - {"state"}
 STRING_SETTINGS = {"default_target_session"}
-JSON_SETTINGS = {"handlers"}
 REMOVED_SETTINGS = {
     "translate",
     "translate_target_lang",
@@ -87,7 +85,6 @@ class SetUserSettingsCommand:
             if (
                 option_key not in VALID_SETTINGS
                 and option_key not in STRING_SETTINGS
-                and option_key not in JSON_SETTINGS
             ):
                 return CommandResult(
                     success=False,
@@ -96,14 +93,6 @@ class SetUserSettingsCommand:
 
             if option_key in STRING_SETTINGS:
                 parsed_value = str(raw_value).strip() or None
-            elif option_key in JSON_SETTINGS:
-                try:
-                    parsed_value = parse_handlers_input(raw_value)
-                except ValueError as exc:
-                    return CommandResult(
-                        success=False,
-                        message=str(exc),
-                    )
             else:
                 try:
                     parsed_value = int(raw_value)
@@ -138,10 +127,7 @@ class SetUserSettingsCommand:
                         )
 
             old_value = getattr(user, option_key, None)
-            if option_key == "handlers":
-                user.handler_specs = parsed_value
-            else:
-                setattr(user, option_key, parsed_value)
+            setattr(user, option_key, parsed_value)
 
             def fmt(val):
                 if val is None:

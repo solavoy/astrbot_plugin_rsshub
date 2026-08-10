@@ -6,8 +6,6 @@ import {
 } from '../../js/api.js';
 import {
   normalizeUserState,
-  handlersToEditorState,
-  buildHandlersFromEditorState,
   createInheritedNumberValue,
   inheritedNumberToPayload
 } from '../helpers.js';
@@ -94,7 +92,6 @@ export const usersModule = {
       display_entry_tags: user.display_entry_tags ?? -100,
       style: user.style ?? -100,
       display_media: user.display_media ?? -100,
-      ...handlersToEditorState(user.handlers),
     };
     this.userEditPanelVisible = true;
   },
@@ -117,7 +114,6 @@ export const usersModule = {
         display_entry_tags: this.userEditForm.display_entry_tags,
         style: this.userEditForm.style,
         display_media: this.userEditForm.display_media,
-        handlers: buildHandlersFromEditorState(this.userEditForm),
       };
       await updateUser(this.userEditForm.user_id, settings);
       this.showToast('用户配置已更新');

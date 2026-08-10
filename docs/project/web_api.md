@@ -80,7 +80,6 @@ Dashboard 的 ID/URL 筛选 UI 使用紧凑筛选栏：关键词框绑定 `keywo
 | `content` | 最终可发送文本 | 不应泄漏原始 HTML 标签。 |
 | `raw_xml` | 原始条目 XML | 用于审计和重试排障。 |
 | `media_urls` | 推送时关联的媒体 URL | 媒体失败时重试会复用。 |
-| `handler_trace` | handler 执行摘要 | 不应泄漏 provider 内部 prompt。 |
 | `fail_reason` | 失败原因 | 需要保持在模型和数据库限制内。 |
 | `source_type` | 来源类型 | 例如 `feed` 或 `agent`。 |
 | `source_key` | 来源去重范围 | 不依赖可复用的历史 `sub_id`。 |

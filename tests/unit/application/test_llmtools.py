@@ -71,35 +71,7 @@ def test_build_llm_tools_names():
         "rss_get_session_defaults",
         "rss_list_push_history",
         "rss_push_xml_entry",
-        "rss_list_handlers",
-        "rss_get_handlers",
-        "rss_set_subscription_handlers",
-        "rss_set_user_handlers",
     }
-
-
-@pytest.mark.asyncio
-async def test_llm_tool_list_handlers_returns_registry_schema():
-    deps = _build_deps()
-    ctx, plugin_ctx = _make_ctx()
-    tools = build_llm_tools(deps=deps, plugin_context=plugin_ctx)
-    tool = next(t for t in tools if t.name == "rss_list_handlers")
-
-    result = await tool.handler(ctx)
-
-    data = json.loads(result)
-    names = {item["name"] for item in data["items"]}
-    assert names == {"ai_filter", "ai_transform"}
-    ai_filter = next(item for item in data["items"] if item["name"] == "ai_filter")
-    assert any(field["key"] == "input_scope" for field in ai_filter["schema"])
-    ai_transform = next(
-        item for item in data["items"] if item["name"] == "ai_transform"
-    )
-    scope_field = next(
-        field for field in ai_transform["schema"] if field["key"] == "scope"
-    )
-    assert scope_field["default"] == "plaintext"
-    assert scope_field["options"] == ["plaintext", "xml"]
 
 
 @pytest.mark.asyncio
@@ -144,9 +116,7 @@ def test_llm_tool_descriptions_guide_agent_decisions():
     assert "sub_id" in tools["rss_list_subscriptions"].description
     assert "当前会话" in tools["rss_set_session_default_option"].description
     assert "用户默认" in tools["rss_set_user_default_option"].description
-    assert "handlers" in tools["rss_list_handlers"].description
-    assert "AI 过滤" in tools["rss_set_subscription_handlers"].description
-    assert "handler_trace" in tools["rss_list_push_history"].description
+    assert "raw_xml" in tools["rss_list_push_history"].description
     assert "dry_run" in tools["rss_push_xml_entry"].description
     assert "不创建长期订阅" in tools["rss_push_xml_entry"].description
 
@@ -314,15 +284,6 @@ async def test_llm_tool_list_push_history_only_returns_current_session():
                 content="content-1",
                 raw_xml="<entry><p>One</p></entry>",
                 media_urls=["https://example.com/1.png"],
-                handler_trace=[
-                    {
-                        "id": "builtin.ai_filter.default",
-                        "name": "ai_filter",
-                        "status": "ok",
-                        "allow": True,
-                        "reason": "matched",
-                    }
-                ],
                 entry_title="title-1",
                 entry_link="https://example.com/1",
                 entry_guid="guid-1",
@@ -352,54 +313,12 @@ async def test_llm_tool_list_push_history_only_returns_current_session():
     assert len(data["items"]) == 1
     assert data["items"][0]["id"] == 1
     assert "sub_id" not in data["items"][0]
-    assert data["items"][0]["handler_trace"][0]["name"] == "ai_filter"
     deps["push_history_repo"].get_by_user.assert_awaited_once_with(
         user_id="u1",
         limit=20,
         offset=0,
         target_session="p:g:1",
     )
-
-
-@pytest.mark.asyncio
-async def test_llm_tool_set_subscription_handlers_uses_update_command():
-    deps = _build_deps()
-    deps["subscription_repo"].get_by_id = AsyncMock(
-        return_value=SimpleNamespace(id=3, user_id="u1", handlers_mode="inherit")
-    )
-    deps["update_sub_cmd"].execute = AsyncMock(
-        return_value=SimpleNamespace(success=True, message="ok")
-    )
-    ctx, plugin_ctx = _make_ctx()
-    tools = build_llm_tools(deps=deps, plugin_context=plugin_ctx)
-    tool = next(t for t in tools if t.name == "rss_set_subscription_handlers")
-    handlers_json = json.dumps(
-        [
-            {
-                "id": "builtin.ai_filter.default",
-                "type": "builtin",
-                "name": "ai_filter",
-                "status": 1,
-                "config": {"prompt": "skip ads", "input_scope": "both"},
-            }
-        ],
-        ensure_ascii=False,
-    )
-
-    result = await tool.handler(ctx, "3", handlers_json, "override")
-
-    assert result == "ok"
-    assert deps["update_sub_cmd"].execute.await_count == 2
-    assert deps["update_sub_cmd"].execute.await_args_list[0].kwargs == {
-        "sub_id": 3,
-        "user_id": "u1",
-        "handlers_mode": "override",
-    }
-    assert deps["update_sub_cmd"].execute.await_args_list[1].kwargs == {
-        "sub_id": 3,
-        "user_id": "u1",
-        "handlers": handlers_json,
-    }
 
 
 @pytest.mark.asyncio

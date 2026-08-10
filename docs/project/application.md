@@ -28,19 +28,18 @@
 | Tool / 能力 | 输入边界 | 输出 / 副作用 | 备注 |
 | --- | --- | --- | --- |
 | `rss_subscribe` | 只暴露 `targets: string[]` | 批量订阅目标 | `targets` 中每项可以是完整 Feed URL、RSSHub path 或 route path。 |
-| `rss_push_xml_entry` | 只暴露安全格式化参数，如 `style`、`send_mode`、显示选项、`length_limit` | 立即推送 XML/HTML 条目并写入 `push_history` | 不暴露 `handlers`，避免即时推送注入处理链。 |
-| XML payload 校验 | 拒绝 malformed、超大、DOCTYPE 输入 | 失败时不进入发送链路 | 保护 XML 解析和后续 handler。 |
+| `rss_push_xml_entry` | 只暴露安全格式化参数，如 `style`、`send_mode`、显示选项、`length_limit` | 立即推送 XML/HTML 条目并写入 `push_history` | 不读取订阅配置。 |
+| XML payload 校验 | 拒绝 malformed、超大、DOCTYPE 输入 | 失败时不进入发送链路 | 保护 XML 解析。 |
 | agent push 去重 | `(source_type, source_key, user_id, target_session, entry_guid)` | 只看成功态 | 不依赖公开 `sub_id`。 |
 | agent retry | 复用历史记录中的 target 和 media 上下文 | 直接重发 | 保留审计连续性。 |
 
-`src/application/llmtools/` 按订阅、配置、handlers、历史和 XML 直推拆分工具实现；公开入口仍是 `build_llm_tools` 与 `LLM_TOOL_NAMES`。这次拆分只改变代码组织和工具说明，不改变公开参数 schema。
+`src/application/llmtools/` 按订阅、配置、历史和 XML 直推拆分工具实现；公开入口仍是 `build_llm_tools` 与 `LLM_TOOL_NAMES`。这次拆分只改变代码组织和工具说明，不改变公开参数 schema。
 
 ## 订阅、用户与历史语义
 
 | 主题 | 当前语义 | 备注 |
 | --- | --- | --- |
 | 配置继承 | 订阅继承用户，用户继承全局默认；继承值只认 `-100` | 不恢复 `use_sub_config` / `use_user_config`。 |
-| Handler 链 | `rsshub_sub.handlers` 与 `rsshub_user.handlers` 保存 JSON handler 链 | 旧非空 `ai_prompt` 迁移为 `builtin.ai_transform`。 |
 | 旧翻译字段 | `translate`、`translate_target_lang` 保持移除 | 翻译不再是应用层内置入口。 |
 | `minimal_interval` | 写入阶段硬下限 | 不要降级成运行时临时 clamp。 |
 | 用户事实表 | 写入订阅或推送历史前必须确保非空 `user_id` 有用户记录 | 启动自愈会从订阅和历史补齐缺失用户。 |

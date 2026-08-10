@@ -40,14 +40,14 @@ tests/             # 单元与集成测试
 - 让应用服务可以脱离插件入口单测
 - 让后续新增 Web API、sender、repository 时只改装配层
 
-LLM tools 的入口仍由 `main.py` 注册；具体实现按主题放在 `src/application/llmtools/`，分别覆盖订阅、配置、handlers、推送历史和 XML/HTML 直推。这个包只负责把 AstrBot tool 调用转发到现有命令、查询和应用服务，不承担启动装配职责。
+LLM tools 的入口仍由 `main.py` 注册；具体实现按主题放在 `src/application/llmtools/`，分别覆盖订阅、配置、推送历史和 XML/HTML 直推。这个包只负责把 AstrBot tool 调用转发到现有命令、查询和应用服务，不承担启动装配职责。
 
 ## 2. 应用服务收口跨模块用例
 
 这个插件的很多用例天然跨边界：
 
 - polling 需要 fetcher + parser + repository + dispatcher
-- dispatch 需要 subscription/user/history/sender/queue/handlers
+- dispatch 需要 subscription/user/history/sender/queue
 - route knowledge sync 需要 source + repository + 本地状态
 
 如果把这些逻辑直接散落在命令、Web API 或 scheduler 里，回归会非常频繁。应用服务层存在的意义，就是把“跨模块编排”集中起来。
@@ -85,9 +85,8 @@ LLM tools 的入口仍由 `main.py` 注册；具体实现按主题放在 `src/ap
 2. `FeedPollingService` 抓取并解析 RSS/Atom/JSON Feed
 3. 用“条目指纹组”完成轮询去重，再把 HTML/XML/JSON Feed 内容整理为纯文本 + 结构化媒体
 4. `NotificationDispatcher` 为每个订阅解析生效配置
-5. 基础清洗完成后，handler runtime 按顺序执行 `ai_filter` / `ai_transform`
-6. sender 将文本与媒体转换为平台消息
-7. 写入 `push_history`
+5. sender 将文本与媒体转换为平台消息
+6. 写入 `push_history`
 
 详见 [`polling.md`](./polling.md) 与 [`dispatch.md`](./dispatch.md)。
 
@@ -109,27 +108,13 @@ sender 层仍保持平台差异隔离：`MessageComponentSorter` 只给出组件
 
 ### 2. 测试推送
 
-- 当目标是 `sub_id` 时，走正式 dispatcher 链路，应用订阅配置和 handlers。
+- 当目标是 `sub_id` 时，走正式 dispatcher 链路，应用订阅配置。
 - 当目标是 URL 时，走轻量直发链路，不读取订阅配置。
 
 这里刻意保留双路径，是为了同时满足：
 
 - 真实订阅回归验证
 - 临时 URL 手工测试
-
-### 3. Handler 处理链
-
-- `subscription.handlers_mode` 决定继承、覆盖或禁用
-- builtin handler 当前支持：
-  - `ai_filter`
-  - `ai_transform`
-- `ai_filter` 仍是轻量 provider JSON 判定
-- `ai_transform` 统一走 AstrBot `tool_loop_agent`
-- `ai_transform(scope=plaintext)` 改写文本字段
-- `ai_transform(scope=xml)` 改写整段 `raw_xml`，通过内部 XML 校验工具自检后再由插件重解析
-- AI 失败时记录 warning / trace，但默认放行
-
-详见 [`handlers.md`](./handlers.md)。
 
 ### 3. XML 即时推送
 
@@ -140,7 +125,7 @@ AI tool `rss_push_xml_entry` 不依赖 `sub_id`。它直接：
 3. 构建推送 history
 4. 调用 sender
 
-它只开放安全排版参数：`style`、`send_mode`、`display_media`、`display_title`、`display_author`、`display_via`、`display_entry_tags`、`length_limit`；不开放 `handlers`，避免即时推送注入处理链。
+它只开放安全排版参数：`style`、`send_mode`、`display_media`、`display_title`、`display_author`、`display_via`、`display_entry_tags`、`length_limit`。
 
 适合“没有订阅但要即时推送”的 agent 场景。
 
@@ -156,12 +141,10 @@ flowchart TD
   B --> C
 
   C --> G["SubscriptionRepository / UserRepository"]
-  C --> H["ContentHandlerRuntime"]
   C --> I["PushHistoryRepository"]
   C --> J["SessionPushQueue"]
   C --> K["MessageSenderProvider"]
 
-  H --> L["Handler Registry"]
   C --> M["EntryTextFormatter"]
   K --> N["MessageComponentSorter / sender adapters"]
 ```
@@ -173,7 +156,6 @@ flowchart TD
 由 `_conf_schema.json` 暴露，主要包含：
 
 - 基础抓取/超时/代理
-- 全局 AI handler provider/persona
 - 平台 sender 策略
 
 插件启动时会在基础设施配置层按 `_conf_schema.json` 做一次配置自愈：补齐缺失字段、删除 schema 外字段、转换可恢复的数值类型，并按 `options` / `slider` 修正非法选项和越界数值。旧 sender strategy 结构和少量 legacy 别名仍在进入运行态配置前归一化；内部字段如 `db_file` 不写回 AstrBot 配置面。
@@ -184,12 +166,9 @@ flowchart TD
 
 - 订阅选项
 - 用户默认配置
-- handlers 链
 - 推送历史自动清理范围
 
 `rsshub_user` 是插件用户事实表。任何写入订阅或推送历史的入口都必须确保对应 `user_id` 存在；启动期数据库自愈也会扫描订阅和推送历史引用，补齐旧库缺失的用户行。Dashboard 删除用户会删除该用户订阅，推送历史默认保留，只有显式选择时才删除历史。
-
-详见 [`handlers.md`](./handlers.md) 中的状态管理部分。
 
 ## 管理界面职责
 
@@ -199,7 +178,6 @@ Plugin Pages 当前管理：
 - 用户列表
 - Feed 列表
 - 推送历史
-- 处理器列表
 - 默认订阅设置
 - 数据管理
 
@@ -220,7 +198,6 @@ Plugin Pages 当前不负责：
 - `content`: 最终可发送文本
 - `raw_xml`: 原始条目 XML；JSON Feed 条目会保存插件合成的 RSS `<item>` 片段
 - `media_urls`: 媒体链接
-- `handler_trace`: handler 执行摘要
 - `fail_reason`: 失败原因
 
 因此，任何内容链路改动都要优先保证 history 可读性不回退。
@@ -229,5 +206,4 @@ Plugin Pages 当前不负责：
 
 - [`polling.md`](./polling.md)
 - [`dispatch.md`](./dispatch.md)
-- [`handlers.md`](./handlers.md)
 - [`formatting.md`](./formatting.md)

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from .plugin_config_models import (
     BasicConfig,
-    ContentHandlersConfig,
     GlobalConfig,
     HttpConfig,
     MediaConfig,
@@ -13,7 +12,6 @@ from .plugin_config_models import (
 from .runtime_settings import (
     ApplicationSettings,
     BasicSettings,
-    ContentHandlerSettings,
     FeedFetchSettings,
     HttpSettings,
     MediaPlatformLimits,
@@ -33,8 +31,6 @@ __all__ = [
     "ApplicationSettings",
     "BasicConfig",
     "BasicSettings",
-    "ContentHandlersConfig",
-    "ContentHandlerSettings",
     "FeedFetchSettings",
     "GlobalConfig",
     "HttpConfig",
@@ -44,8 +40,8 @@ __all__ = [
     "MediaSettings",
     "PlatformSenderStrategyConfig",
     "PlatformStrategySettings",
-    "RsshubPluginConfig",
     "RSSSettings",
+    "RsshubPluginConfig",
     "SchedulerSettings",
     "SenderStrategiesConfig",
     "SenderStrategySettings",

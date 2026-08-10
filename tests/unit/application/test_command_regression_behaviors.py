@@ -14,9 +14,7 @@ from astrbot_plugin_rsshub.src.application.commands.test_subscription_cmd import
 from astrbot_plugin_rsshub.src.application.commands.unsubscribe_feed_cmd import (
     UnsubscribeFeedCommand,
 )
-from astrbot_plugin_rsshub.src.application.services.content_handlers import (
-    EntryContentContext,
-)
+from astrbot_plugin_rsshub.src.domain.entities.content_types import EntryContentContext
 from astrbot_plugin_rsshub.src.domain.entities.feed import Feed
 from astrbot_plugin_rsshub.src.domain.entities.subscription import Subscription
 from astrbot_plugin_rsshub.src.infrastructure.fetcher import EntryParsed

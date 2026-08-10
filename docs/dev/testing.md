@@ -36,7 +36,6 @@ uv pip install --python .venv/bin/python -r data/plugins/astrbot_plugin_rsshub/r
 | Plugin Pages | `node --check pages/dashboard/app.js`、`node --check pages/dashboard/js/api.js` | 手工验证 tab 切换、loading 态、批量模式、详情面板、历史记录筛选 | 前端改动不要只看代码。 |
 | 配置或迁移 | 相关配置 / migration 测试 | 旧配置兼容、`_conf_schema.json`、旧 sqlite、旧 TOML | 脏配置和旧库要能被容忍。 |
 | sender / 媒体 | sender 单测、媒体下载相关测试 | OneBot、QQ Official、Telegram、Weixin OC 关键路径 | 这四个平台是当前明确测试覆盖点。 |
-| handler runtime | handler 相关单测 | `ai_filter`、`ai_transform plaintext/xml`、trace 写入 | handler 失败默认不能阻断 RSS。 |
 
 ## QQ Official 媒体探针
 

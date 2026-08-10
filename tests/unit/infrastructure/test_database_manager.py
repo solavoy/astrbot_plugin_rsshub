@@ -7,14 +7,10 @@ from astrbot_plugin_rsshub.src.infrastructure.persistence.database import (
 from astrbot_plugin_rsshub.src.infrastructure.persistence.migrations import (
     MigrationRunner,
     cleanup_legacy_translation_tables,
-    ensure_profile_schema,
     ensure_push_history_schema,
     ensure_user_rows,
 )
-from astrbot_plugin_rsshub.src.infrastructure.persistence.models import SubORM
 from sqlalchemy.ext.asyncio import create_async_engine
-from sqlalchemy.orm import sessionmaker
-from sqlmodel.ext.asyncio.session import AsyncSession
 
 
 def test_database_is_initialized_requires_session_maker():
@@ -63,12 +59,11 @@ async def test_ensure_push_history_schema_adds_missing_columns():
 
     applied = await ensure_push_history_schema(conn)
 
-    assert applied == ["source_type", "source_key", "raw_xml", "handler_trace"]
+    assert applied == ["source_type", "source_key", "raw_xml"]
     executed_sql = "\n".join(sql for sql, _ in conn.executed)
     assert "ADD COLUMN source_type" in executed_sql
     assert "ADD COLUMN source_key" in executed_sql
     assert "ADD COLUMN raw_xml" in executed_sql
-    assert "ADD COLUMN handler_trace" in executed_sql
 
 
 class _LegacyTableConn(_Conn):
@@ -275,144 +270,13 @@ async def test_ensure_user_rows_backfills_when_user_table_lacks_sql_defaults():
 
 
 @pytest.mark.asyncio
-async def test_ensure_profile_schema_adds_handlers_mode_to_existing_sub_table():
-    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
-    async with engine.begin() as conn:
-        await conn.exec_driver_sql(
-            """
-            CREATE TABLE rsshub_user (
-                id VARCHAR PRIMARY KEY
-            )
-            """
-        )
-        await conn.exec_driver_sql(
-            """
-            CREATE TABLE rsshub_sub (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id VARCHAR NOT NULL,
-                handlers TEXT NOT NULL DEFAULT '[]'
-            )
-            """
-        )
-        await conn.exec_driver_sql(
-            """
-            INSERT INTO rsshub_user (id) VALUES ('u1')
-            """
-        )
-        await conn.exec_driver_sql(
-            """
-            INSERT INTO rsshub_sub (id, user_id, handlers)
-            VALUES
-                (1, 'u1', '[]'),
-                (2, 'u1', '[{"id":"builtin.ai_filter.default"}]')
-            """
-        )
-
-        applied = await ensure_profile_schema(conn)
-
-        assert applied == ["rsshub_user.handlers", "rsshub_sub.handlers_mode"]
-        sub_columns = {
-            str(row[1])
-            for row in (
-                await conn.exec_driver_sql("PRAGMA table_info(rsshub_sub)")
-            ).fetchall()
-        }
-        user_columns = {
-            str(row[1])
-            for row in (
-                await conn.exec_driver_sql("PRAGMA table_info(rsshub_user)")
-            ).fetchall()
-        }
-        rows = (
-            await conn.exec_driver_sql(
-                "SELECT id, handlers_mode FROM rsshub_sub ORDER BY id"
-            )
-        ).fetchall()
-
-        assert "handlers" in user_columns
-        assert "handlers_mode" in sub_columns
-        assert rows == [(1, "inherit"), (2, "override")]
-
-    await engine.dispose()
-
-
-@pytest.mark.asyncio
-async def test_ensure_profile_schema_allows_current_sub_orm_reads():
-    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
-    async with engine.begin() as conn:
-        await conn.exec_driver_sql(
-            """
-            CREATE TABLE rsshub_user (
-                id VARCHAR PRIMARY KEY
-            )
-            """
-        )
-        await conn.exec_driver_sql(
-            """
-            CREATE TABLE rsshub_feed (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                link VARCHAR NOT NULL,
-                title VARCHAR NOT NULL
-            )
-            """
-        )
-        await conn.exec_driver_sql(
-            """
-            CREATE TABLE rsshub_sub (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                state INTEGER NOT NULL DEFAULT 1,
-                user_id VARCHAR NOT NULL,
-                feed_id INTEGER NOT NULL,
-                title VARCHAR NOT NULL DEFAULT '',
-                tags VARCHAR NOT NULL DEFAULT '',
-                target_session VARCHAR,
-                platform_name VARCHAR,
-                interval INTEGER NOT NULL DEFAULT -100,
-                next_check_time DATETIME,
-                notify INTEGER NOT NULL DEFAULT -100,
-                send_mode INTEGER NOT NULL DEFAULT -100,
-                length_limit INTEGER NOT NULL DEFAULT -100,
-                display_author INTEGER NOT NULL DEFAULT -100,
-                display_via INTEGER NOT NULL DEFAULT -100,
-                display_title INTEGER NOT NULL DEFAULT -100,
-                display_entry_tags INTEGER NOT NULL DEFAULT -100,
-                style INTEGER NOT NULL DEFAULT -100,
-                display_media INTEGER NOT NULL DEFAULT -100,
-                handlers TEXT NOT NULL DEFAULT '[]',
-                created_at DATETIME,
-                updated_at DATETIME
-            )
-            """
-        )
-        await conn.exec_driver_sql("INSERT INTO rsshub_user (id) VALUES ('u1')")
-        await conn.exec_driver_sql(
-            "INSERT INTO rsshub_feed (id, link, title) VALUES (1, 'https://example.com/rss', 'Feed')"
-        )
-        await conn.exec_driver_sql(
-            """
-            INSERT INTO rsshub_sub (id, user_id, feed_id, title, handlers)
-            VALUES (1, 'u1', 1, 'Sub', '[]')
-            """
-        )
-
-        await ensure_profile_schema(conn)
-
-    session_factory = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
-    async with session_factory() as session:
-        sub = await session.get(SubORM, 1)
-
-    assert sub is not None
-    assert sub.handlers_mode == "inherit"
-    await engine.dispose()
-
-
-@pytest.mark.asyncio
 async def test_migration_runner_only_discovers_current_baseline_migration():
     runner = MigrationRunner()
 
     assert [(item.version, item.name) for item in runner.scripts] == [
         (1, "V1_init"),
         (2, "V2_drop_link_preview"),
+        (3, "V3_drop_handler_columns"),
     ]
 
 
@@ -422,7 +286,7 @@ async def test_v1_current_baseline_has_expected_core_columns_and_index():
     async with engine.begin() as conn:
         executed = await MigrationRunner().run_all(conn)
 
-        assert executed == [1, 2]
+        assert executed == [1, 2, 3]
 
         sub_columns = {
             str(row[1])
@@ -451,11 +315,10 @@ async def test_v1_current_baseline_has_expected_core_columns_and_index():
             ).fetchall()
         }
 
-        assert "handlers_mode" in sub_columns
-        assert "handlers_mode" not in user_columns
+        assert "handlers_mode" not in sub_columns
         assert "link_preview" not in user_columns
         assert "link_preview" not in sub_columns
-        assert {"source_type", "source_key", "raw_xml", "handler_trace"}.issubset(
+        assert {"source_type", "source_key", "raw_xml"}.issubset(
             history_columns
         )
         assert "idx_rsshub_push_history_scope_guid" in indexes

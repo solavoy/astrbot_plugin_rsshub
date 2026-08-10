@@ -5,8 +5,6 @@
 """
 
 from ...domain.entities.feed import Feed
-from ...domain.entities.handlers import parse_handlers_input
-from ...domain.entities.subscription import SUPPORTED_HANDLERS_MODES
 from ...domain.repositories.feed_repository import FeedRepository
 from ...domain.repositories.subscription_repository import SubscriptionRepository
 from ...domain.repositories.user_repository import UserRepository
@@ -221,15 +219,6 @@ class SubscribeFeedCommand:
                     continue
                 if key in {"title", "tags"}:
                     update_payload[key] = str(raw_value)
-                elif key == "handlers_mode":
-                    normalized = str(raw_value or "").strip().lower()
-                    if normalized in SUPPORTED_HANDLERS_MODES:
-                        update_payload[key] = normalized
-                elif key == "handlers":
-                    try:
-                        update_payload[key] = parse_handlers_input(raw_value)
-                    except ValueError:
-                        pass
                 else:
                     try:
                         if key == "interval":

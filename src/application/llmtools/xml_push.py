@@ -70,7 +70,7 @@ def build_xml_push_tools(*, deps: LLMToolDeps, plugin_context) -> list[FunctionT
             name="rss_push_xml_entry",
             description=(
                 "一次性解析 XML/HTML 标签内容并推送到当前会话。可用 dry_run 预览；"
-                "不创建长期订阅，也不读取或注入 handlers。"
+                "不创建长期订阅。"
             ),
             parameters={
                 "type": "object",

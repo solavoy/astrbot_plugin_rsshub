@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from .handler_tools import build_handler_tools
 from .history import build_history_tools
 from .settings import build_setting_tools
 from .subscriptions import build_subscription_tools
@@ -20,10 +19,6 @@ LLM_TOOL_NAMES = [
     "rss_get_session_defaults",
     "rss_list_push_history",
     "rss_push_xml_entry",
-    "rss_list_handlers",
-    "rss_get_handlers",
-    "rss_set_subscription_handlers",
-    "rss_set_user_handlers",
 ]
 
 
@@ -34,5 +29,4 @@ def build_llm_tools(*, deps: LLMToolDeps, plugin_context) -> list[FunctionTool]:
         *build_setting_tools(deps=deps, plugin_context=plugin_context),
         *build_history_tools(deps=deps, plugin_context=plugin_context),
         *build_xml_push_tools(deps=deps, plugin_context=plugin_context),
-        *build_handler_tools(deps=deps, plugin_context=plugin_context),
     ]

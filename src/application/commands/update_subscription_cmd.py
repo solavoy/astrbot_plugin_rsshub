@@ -4,8 +4,6 @@
 处理更新订阅配置选项的业务用例。
 """
 
-from ...domain.entities.handlers import parse_handlers_input
-from ...domain.entities.subscription import SUPPORTED_HANDLERS_MODES
 from ...domain.repositories.subscription_repository import SubscriptionRepository
 from ...infrastructure.config import validate_interval_value
 from ..dto.result_dto import CommandResult
@@ -16,15 +14,15 @@ REMOVED_OPTIONS = {
     "translate_target_lang",
     "use_sub_config",
     "ai_prompt",
+    "handlers",
+    "handlers_mode",
 }
 STRING_OPTIONS = {
     "title",
     "tags",
     "target_session",
     "platform_name",
-    "handlers_mode",
 }
-JSON_OPTIONS = {"handlers"}
 
 
 class UpdateSubscriptionCommand:
@@ -58,26 +56,12 @@ class UpdateSubscriptionCommand:
         if removed:
             return CommandResult(
                 success=False,
-                message=("订阅翻译选项已移除: " + ", ".join(removed)),
+                message=("订阅选项已移除: " + ", ".join(removed)),
             )
         normalized_options = {}
         for key, value in options.items():
             if key in STRING_OPTIONS:
-                normalized_value = str(value or "").strip()
-                if key == "handlers_mode":
-                    normalized_value = normalized_value.lower()
-                    if normalized_value not in SUPPORTED_HANDLERS_MODES:
-                        return CommandResult(
-                            success=False,
-                            message="handlers_mode 只支持 inherit / override / disabled",
-                        )
-                normalized_options[key] = normalized_value
-                continue
-            if key in JSON_OPTIONS:
-                try:
-                    normalized_options[key] = parse_handlers_input(value)
-                except ValueError as exc:
-                    return CommandResult(success=False, message=str(exc))
+                normalized_options[key] = str(value or "").strip()
                 continue
             if key == "interval":
                 try:

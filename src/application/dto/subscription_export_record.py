@@ -5,14 +5,10 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
-from ...domain.entities.handlers import handlers_json
-
 if TYPE_CHECKING:
     from ...domain.entities.subscription import Subscription
 
 SUBSCRIPTION_EXPORT_STRING_FIELDS = {
-    "handlers",
-    "handlers_mode",
     "title",
     "tags",
     "platform_name",
@@ -53,15 +49,6 @@ def build_subscription_export_record(
 
     for key in sorted(SUBSCRIPTION_EXPORT_STRING_FIELDS - {"feed_title"}):
         value = getattr(subscription, key, None)
-        if key == "handlers":
-            serialized = handlers_json(value)
-            if serialized != "[]":
-                options[key] = serialized
-            continue
-        if key == "handlers_mode":
-            if isinstance(value, str) and value.strip() and value != "inherit":
-                options[key] = value
-            continue
         if isinstance(value, str) and value.strip():
             options[key] = value
 

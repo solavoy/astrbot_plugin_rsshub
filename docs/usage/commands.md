@@ -39,7 +39,6 @@
 | `state` | `0/1` | 推送状态。 |
 | `notify` | `0/1` | 是否通知。 |
 | `send_mode` | `-1/0/1` | `-1` 仅链接，`0` 自动，`1` 直接发送。 |
-| `handlers` | JSON 数组 | 内容处理链，支持 `ai_filter` / `ai_transform`。 |
 | `length_limit` | 正整数 | 内容长度限制，`0` 表示不限制。 |
 | `display_author` | `-1~1` | 是否显示作者。 |
 | `display_via` | `-2~-1/0/1` | 是否显示来源。 |

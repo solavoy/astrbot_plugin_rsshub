@@ -8,7 +8,6 @@ from __future__ import annotations
 
 from sqlmodel import select
 
-from ...domain.entities.handlers import dump_handlers, handlers_json
 from ...domain.entities.user import User
 from ...domain.repositories.user_repository import UserRepository
 from ..utils import get_logger
@@ -55,7 +54,6 @@ class UserRepositoryImpl:
                 orm.interval = updated_orm.interval
                 orm.notify = updated_orm.notify
                 orm.send_mode = updated_orm.send_mode
-                orm.handlers = updated_orm.handlers
                 orm.length_limit = updated_orm.length_limit
                 orm.display_author = updated_orm.display_author
                 orm.display_via = updated_orm.display_via
@@ -115,7 +113,6 @@ class UserRepositoryImpl:
             interval=orm.interval,
             notify=orm.notify,
             send_mode=orm.send_mode,
-            handlers=dump_handlers(orm.handlers),
             length_limit=orm.length_limit,
             display_author=orm.display_author,
             display_via=orm.display_via,
@@ -138,7 +135,6 @@ class UserRepositoryImpl:
             interval=user.interval,
             notify=user.notify,
             send_mode=user.send_mode,
-            handlers=handlers_json(user.get_handlers()),
             length_limit=user.length_limit,
             display_author=user.display_author,
             display_via=user.display_via,

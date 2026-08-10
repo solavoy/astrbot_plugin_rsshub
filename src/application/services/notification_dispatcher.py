@@ -20,7 +20,11 @@ except Exception:  # pragma: no cover - lightweight test fallback
         unified_msg_origin: str = ""
 
 
-from ...domain.entities.content_types import LayoutFragment, is_generated_media_url
+from ...domain.entities.content_types import (
+    EntryContentContext,
+    LayoutFragment,
+    is_generated_media_url,
+)
 from ...domain.entities.push_history import PushHistory
 from ...domain.repositories.push_history_repository import PushHistoryRepository
 from ...domain.repositories.subscription_repository import SubscriptionRepository
@@ -43,7 +47,6 @@ from ...shared.constants import (
     STYLE_ORIGINAL,
 )
 from ..ports import MessageContext, MessageSenderProvider, SendRequest
-from .content_handlers import ContentHandlerRuntime, EntryContentContext
 from .session_push_queue import PushJob, SessionPushQueue
 
 logger = get_logger()
@@ -87,7 +90,6 @@ class PreparedSubscriptionDispatch:
 
     subscription: Any
     processed_entry: EntryContentContext | None
-    handler_trace: list[dict[str, Any]] | None
     effective_title: str
     effective_link: str
     effective_content: str
@@ -256,7 +258,6 @@ class NotificationDispatcher:
         sender_provider: MessageSenderProvider,
         user_repo: UserRepository | None = None,
         push_job_queue: SessionPushQueue | None = None,
-        content_handler_runtime: ContentHandlerRuntime | None = None,
         subscription_defaults: SubscriptionDefaults | None = None,
         basic_settings: BasicSettings | None = None,
     ):
@@ -265,9 +266,6 @@ class NotificationDispatcher:
         self._push_history_repo = push_history_repo
         self._sender_provider = sender_provider
         self._push_job_queue = push_job_queue or SessionPushQueue()
-        self._content_handler_runtime = (
-            content_handler_runtime or ContentHandlerRuntime()
-        )
         self._default_push_options = self._options_from_subscription_defaults(
             subscription_defaults or SubscriptionDefaults()
         )
@@ -509,7 +507,6 @@ class NotificationDispatcher:
         feed_id: int,
         processed_entry: EntryContentContext | None,
         persisted_media_urls: list[str] | None,
-        handler_trace: list[dict[str, Any]] | None,
         effective_title: str,
         effective_link: str,
         effective_content: str,
@@ -532,7 +529,6 @@ class NotificationDispatcher:
             )
             or None,
             media_urls=persisted_media_urls or None,
-            handler_trace=handler_trace,
             entry_title=effective_title,
             entry_link=effective_link,
             entry_guid=entry_guid,
@@ -634,30 +630,11 @@ class NotificationDispatcher:
             )
             persisted_media_urls = [url for _media_type, url in normalized_media]
 
-            # 2. 为每个订阅解析最终 payload；handler skip 在此阶段直接落审计记录。
+            # 2. 为每个订阅解析最终 payload。
             for sub in subscriptions:
                 try:
                     user = await self._ensure_user(sub.user_id)
                     processed_entry = raw_entry
-                    handler_trace: list[dict[str, Any]] | None = None
-                    handler_allowed = True
-                    handler_reason = ""
-                    if raw_entry is not None:
-                        handler_result = await self._content_handler_runtime.process_entry_with_trace(
-                            subscription=sub,
-                            user=user,
-                            entry=raw_entry,
-                            session_id=str(sub.target_session or "").strip() or None,
-                            event=event,
-                            target_session=str(sub.target_session or "").strip()
-                            or None,
-                            platform_name=str(sub.platform_name or "").strip() or None,
-                            user_id=str(sub.user_id or "").strip() or None,
-                        )
-                        processed_entry = handler_result.entry
-                        handler_allowed = handler_result.allow
-                        handler_reason = handler_result.reason
-                        handler_trace = list(handler_result.trace) or None
                     if processed_entry is not None and processed_entry.layout:
                         layouts_to_cleanup.append(processed_entry.layout)
 
@@ -693,7 +670,6 @@ class NotificationDispatcher:
                                 and persisted_media_urls
                                 else None
                             ),
-                            handler_trace=handler_trace,
                             effective_title=effective_title,
                             effective_link=effective_link,
                             effective_content=effective_content,
@@ -703,33 +679,6 @@ class NotificationDispatcher:
                             reason="notify disabled",
                         )
                         logger.debug("订阅 %s 已关闭通知，跳过条目推送", sub.id)
-                        stats["skipped"] += 1
-                        continue
-                    if not handler_allowed:
-                        await self._save_skipped_history(
-                            subscription=sub,
-                            feed_id=feed_id,
-                            processed_entry=processed_entry,
-                            persisted_media_urls=(
-                                persisted_media_urls
-                                if effective_options.display_media
-                                and persisted_media_urls
-                                else None
-                            ),
-                            handler_trace=handler_trace,
-                            effective_title=effective_title,
-                            effective_link=effective_link,
-                            effective_content=effective_content,
-                            entry_guid=entry_guid,
-                            feed_title=feed_title,
-                            feed_link=feed_link,
-                            reason=handler_reason,
-                        )
-                        logger.info(
-                            "订阅 %s 条目被 handler 跳过: %s",
-                            sub.id,
-                            handler_reason,
-                        )
                         stats["skipped"] += 1
                         continue
                     effective_send_mode = self._resolve_send_mode(sub, user)
@@ -781,7 +730,6 @@ class NotificationDispatcher:
                                     and persisted_media_urls
                                     else None
                                 ),
-                                handler_trace=handler_trace,
                                 effective_title=effective_title,
                                 effective_link=effective_link,
                                 effective_content=effective_content,
@@ -800,7 +748,6 @@ class NotificationDispatcher:
                         PreparedSubscriptionDispatch(
                             subscription=sub,
                             processed_entry=processed_entry,
-                            handler_trace=handler_trace,
                             effective_title=effective_title,
                             effective_link=effective_link,
                             effective_content=effective_content,
@@ -855,7 +802,6 @@ class NotificationDispatcher:
                             feed_id=feed_id,
                             processed_entry=prepared.processed_entry,
                             persisted_media_urls=prepared.persisted_media_urls,
-                            handler_trace=prepared.handler_trace,
                             effective_title=prepared.effective_title,
                             effective_link=prepared.effective_link,
                             effective_content=prepared.effective_content,
@@ -895,7 +841,6 @@ class NotificationDispatcher:
                         )
                         or None,
                         media_urls=prepared.persisted_media_urls,
-                        handler_trace=prepared.handler_trace,
                         entry_title=prepared.effective_title,
                         entry_link=prepared.effective_link,
                         entry_guid=entry_guid,

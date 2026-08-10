@@ -203,11 +203,6 @@ export async function getPluginSettings() {
   return await apiGet('plugin-settings');
 }
 
-export async function getHandlers() {
-  const r = await apiGet('handlers');
-  return { items: r.items || [] };
-}
-
 export async function setPluginSettings({
   subscription_defaults = {},
   history_retention_days,

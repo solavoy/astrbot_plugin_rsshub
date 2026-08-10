@@ -6,12 +6,10 @@
 """
 
 from datetime import datetime, timezone
-from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field
 
 from ...shared.constants import INHERIT_VALUE, USER_STATE_BANNED, USER_STATE_USER
-from .handlers import dump_handlers, normalize_handlers
 
 
 class User(BaseModel):
@@ -35,11 +33,6 @@ class User(BaseModel):
     send_mode: int = Field(
         default=INHERIT_VALUE,
         description="发送模式: -1=仅链接, 0=自动, 1=直接发送",
-    )
-    handler_specs: Any = Field(
-        default_factory=list,
-        alias="handlers",
-        description="内容处理 handlers",
     )
     length_limit: int = Field(default=INHERIT_VALUE, description="长度限制")
     display_author: int = Field(
@@ -71,34 +64,6 @@ class User(BaseModel):
     updated_at: datetime = Field(
         default_factory=lambda: datetime.now(timezone.utc), description="更新时间"
     )
-
-    @model_validator(mode="before")
-    @classmethod
-    def _normalize_handlers_field(cls, value: Any) -> Any:
-        if isinstance(value, dict):
-            payload = dict(value)
-            raw_handlers = payload.get("handlers", payload.get("handler_specs"))
-            payload["handler_specs"] = dump_handlers(normalize_handlers(raw_handlers))
-            return payload
-        return value
-
-    def get_handlers(self) -> list[dict[str, Any]]:
-        return dump_handlers(self.handler_specs)
-
-    def set_handlers(self, value: Any) -> "User":
-        self.handler_specs = dump_handlers(normalize_handlers(value))
-        self.updated_at = datetime.now(timezone.utc)
-        return self
-
-    def clear_handlers(self) -> "User":
-        self.handler_specs = []
-        self.updated_at = datetime.now(timezone.utc)
-        return self
-
-    @property
-    def handlers(self) -> list[dict[str, Any]]:
-        """Backward-compatible read-only alias."""
-        return self.get_handlers()
 
     def is_active(self) -> bool:
         """检查用户是否处于启用状态（非封禁）"""
@@ -156,7 +121,3 @@ class User(BaseModel):
             if value != INHERIT_VALUE:
                 return value
         return None
-
-    def get_effective_handlers(self) -> list[dict[str, Any]]:
-        """获取规范化后的 handlers。"""
-        return self.get_handlers()

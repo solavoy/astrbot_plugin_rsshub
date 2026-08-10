@@ -256,19 +256,6 @@ class HttpConfig(BaseModel):
         return cls.model_validate({**cls().model_dump(), **(data or {})})
 
 
-class ContentHandlersConfig(BaseModel):
-    """全局内容处理器配置"""
-
-    ai_provider_id: str = Field(default="", description="AI Provider ID")
-    ai_persona_id: str = Field(default="", description="AI Persona ID")
-
-    @classmethod
-    def from_dict(cls, data: dict[str, Any] | None) -> ContentHandlersConfig:
-        if not data:
-            return cls()
-        return cls.model_validate({**cls().model_dump(), **(data or {})})
-
-
 class RsshubPluginConfig(BaseModel):
     """RSSHub 插件统一配置类"""
 
@@ -276,9 +263,6 @@ class RsshubPluginConfig(BaseModel):
     http_config: HttpConfig = Field(default_factory=HttpConfig)
     global_config: GlobalConfig = Field(default_factory=GlobalConfig)
     media: MediaConfig = Field(default_factory=MediaConfig)
-    content_handlers: ContentHandlersConfig = Field(
-        default_factory=ContentHandlersConfig
-    )
     sender_strategies: SenderStrategiesConfig = Field(
         default_factory=SenderStrategiesConfig
     )
@@ -318,7 +302,6 @@ class RsshubPluginConfig(BaseModel):
             )
 
         global_cfg = astrbot_config.get("global_config", {})
-        content_handlers_cfg = astrbot_config.get("content_handlers", {})
         sender_strategies_cfg = astrbot_config.get("sender_strategies")
 
         return cls(
@@ -326,7 +309,6 @@ class RsshubPluginConfig(BaseModel):
             http_config=HttpConfig.from_dict(http_cfg),
             global_config=GlobalConfig.from_dict(global_cfg),
             media=MediaConfig.from_dict(media_cfg),
-            content_handlers=ContentHandlersConfig.from_dict(content_handlers_cfg),
             sender_strategies=SenderStrategiesConfig.from_config(sender_strategies_cfg),
             db_file=astrbot_config.get("db_file", "rsshub.db"),
         )

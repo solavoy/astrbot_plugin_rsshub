@@ -6,11 +6,6 @@ from unittest.mock import AsyncMock
 
 import pytest
 from astrbot_plugin_rsshub.src.application.ports import SendResult
-from astrbot_plugin_rsshub.src.application.services.content_handlers import (
-    ContentHandlerRuntime,
-    EntryContentContext,
-    HandlerProcessResult,
-)
 from astrbot_plugin_rsshub.src.application.services.notification_dispatcher import (
     NotificationDispatcher,
     SendTarget,
@@ -24,13 +19,13 @@ from astrbot_plugin_rsshub.src.application.services.session_push_queue import (
     SessionPushQueue,
 )
 from astrbot_plugin_rsshub.src.domain.entities.content_types import (
+    EntryContentContext,
     LayoutFragment,
     build_generated_media_url,
 )
 from astrbot_plugin_rsshub.src.domain.entities.push_history import PushHistory
 from astrbot_plugin_rsshub.src.domain.entities.subscription import Subscription
 from astrbot_plugin_rsshub.src.domain.entities.user import User
-from astrbot_plugin_rsshub.src.infrastructure.config import ContentHandlerSettings
 
 
 class FakeSender:
@@ -49,317 +44,6 @@ class FakeSenderProvider:
 
     def get(self, platform_name: str | None):
         return self.sender
-
-
-class FakeProviderResponse:
-    def __init__(self, completion_text: str) -> None:
-        self.completion_text = completion_text
-
-
-class FakeProvider:
-    def __init__(self, completion_text: str) -> None:
-        self.completion_text = completion_text
-        self.prompts = []
-
-    async def text_chat(self, **kwargs):
-        self.prompts.append(kwargs)
-        return FakeProviderResponse(self.completion_text)
-
-    def meta(self):
-        return SimpleNamespace(id="fake-provider")
-
-
-class FakeProviderContext:
-    def __init__(self, provider: FakeProvider) -> None:
-        self.provider = provider
-
-    def get_using_provider(self, session_id=None):
-        return self.provider
-
-    async def tool_loop_agent(self, **kwargs):
-        prompt = kwargs.get("prompt", "")
-        self.provider.prompts.append(
-            {
-                "prompt": prompt,
-                "system_prompt": kwargs.get("system_prompt", ""),
-                "tools": [
-                    tool.name for tool in getattr(kwargs.get("tools"), "tools", [])
-                ],
-            }
-        )
-        return FakeProviderResponse(self.provider.completion_text)
-
-
-class FakeProviderSelectorContext:
-    def __init__(
-        self, *, default_provider: FakeProvider, selected_provider: FakeProvider
-    ):
-        self.default_provider = default_provider
-        self.selected_provider = selected_provider
-        self.requested_provider_ids = []
-        self.persona_manager = self
-
-    def get_using_provider(self, session_id=None):
-        return self.default_provider
-
-    def get_provider_by_id(self, provider_id):
-        self.requested_provider_ids.append(provider_id)
-        return self.selected_provider
-
-    def get_persona_v3_by_id(self, persona_id):
-        return {"name": persona_id, "prompt": "persona system prompt"}
-
-    async def tool_loop_agent(self, **kwargs):
-        self.selected_provider.prompts.append(
-            {
-                "prompt": kwargs.get("prompt", ""),
-                "system_prompt": kwargs.get("system_prompt", ""),
-                "tools": [
-                    tool.name for tool in getattr(kwargs.get("tools"), "tools", [])
-                ],
-            }
-        )
-        return FakeProviderResponse(self.selected_provider.completion_text)
-
-
-def test_content_handler_runtime_resolves_handlers_mode_semantics():
-    runtime = ContentHandlerRuntime()
-    user = User(id="user-1")
-    inherit_sub = Subscription(
-        id=1,
-        user_id="user-1",
-        feed_id=10,
-        handlers_mode="inherit",
-        handlers=[
-            {
-                "id": "builtin.ai_transform.default",
-                "type": "builtin",
-                "name": "ai_transform",
-                "status": 1,
-                "config": {"prompt": "ignored"},
-            }
-        ],
-    )
-    override_sub = Subscription(
-        id=2,
-        user_id="user-1",
-        feed_id=10,
-        handlers_mode="override",
-        handlers=[
-            {
-                "id": "builtin.ai_transform.default",
-                "type": "builtin",
-                "name": "ai_transform",
-                "status": 1,
-                "config": {"prompt": "used"},
-            }
-        ],
-    )
-    disabled_sub = Subscription(
-        id=3,
-        user_id="user-1",
-        feed_id=10,
-        handlers_mode="disabled",
-        handlers=[
-            {
-                "id": "builtin.ai_transform.default",
-                "type": "builtin",
-                "name": "ai_transform",
-                "status": 1,
-                "config": {"prompt": "ignored"},
-            }
-        ],
-    )
-
-    inherit = runtime.resolve_handlers(subscription=inherit_sub, user=user)
-    override = runtime.resolve_handlers(subscription=override_sub, user=user)
-    disabled = runtime.resolve_handlers(subscription=disabled_sub, user=user)
-
-    assert inherit == []
-    assert [spec.name for spec in override] == ["ai_transform"]
-    assert disabled == []
-
-
-@pytest.mark.asyncio
-async def test_ai_filter_invalid_json_allows_with_trace():
-    provider = FakeProvider("not json")
-    runtime = ContentHandlerRuntime(FakeProviderContext(provider))
-    sub = Subscription(
-        id=1,
-        user_id="user-1",
-        feed_id=10,
-        handlers_mode="override",
-        handlers=[
-            {
-                "id": "builtin.ai_filter.default",
-                "type": "builtin",
-                "name": "ai_filter",
-                "status": 1,
-                "config": {"prompt": "keep only important", "input_scope": "both"},
-            }
-        ],
-    )
-
-    result = await runtime.process_entry_with_trace(
-        subscription=sub,
-        user=None,
-        entry=EntryContentContext(
-            title="title",
-            summary="summary",
-            content="content",
-            link="https://example.com/entry",
-            author="author",
-            feed_title="Feed",
-            feed_link="https://example.com/feed.xml",
-            raw_xml="<item>raw</item>",
-        ),
-    )
-
-    assert result.allow is True
-    assert result.trace[0]["name"] == "ai_filter"
-    assert result.trace[0]["allow"] is True
-    assert result.trace[0]["reason"] == "invalid json"
-    assert "raw_xml" in provider.prompts[0]["prompt"]
-
-
-@pytest.mark.asyncio
-async def test_ai_handlers_use_global_provider_and_persona_system_prompt():
-    default_provider = FakeProvider('{"allow": false, "reason": "wrong provider"}')
-    selected_provider = FakeProvider('{"allow": true, "reason": "ok"}')
-    context = FakeProviderSelectorContext(
-        default_provider=default_provider,
-        selected_provider=selected_provider,
-    )
-    runtime = ContentHandlerRuntime(
-        context,
-        settings=ContentHandlerSettings(
-            ai_provider_id="provider-1",
-            ai_persona_id="persona-1",
-        ),
-    )
-    sub = Subscription(
-        id=1,
-        user_id="user-1",
-        feed_id=10,
-        handlers_mode="override",
-        handlers=[
-            {
-                "id": "builtin.ai_filter.default",
-                "type": "builtin",
-                "name": "ai_filter",
-                "status": 1,
-                "config": {"prompt": "allow useful entries"},
-            }
-        ],
-    )
-
-    result = await runtime.process_entry_with_trace(
-        subscription=sub,
-        user=None,
-        entry=EntryContentContext(
-            title="title",
-            summary="summary",
-            content="content",
-            link="https://example.com/entry",
-            author="author",
-            feed_title="Feed",
-            feed_link="https://example.com/feed.xml",
-            raw_xml="<item>raw</item>",
-        ),
-        session_id="session-1",
-    )
-
-    assert result.allow is True
-    assert context.requested_provider_ids == ["provider-1"]
-    assert default_provider.prompts == []
-    assert selected_provider.prompts[0]["system_prompt"] == "persona system prompt"
-
-
-@pytest.mark.asyncio
-async def test_ai_transform_plaintext_uses_agent_and_updates_text_fields():
-    provider = FakeProvider('{"title":"新标题","summary":"新摘要","content":"新正文"}')
-    runtime = ContentHandlerRuntime(FakeProviderContext(provider))
-    sub = Subscription(
-        id=1,
-        user_id="user-1",
-        feed_id=10,
-        handlers_mode="override",
-        handlers=[
-            {
-                "id": "builtin.ai_transform.default",
-                "type": "builtin",
-                "name": "ai_transform",
-                "status": 1,
-                "config": {"prompt": "压缩成简短摘要", "scope": "plaintext"},
-            }
-        ],
-    )
-
-    result = await runtime.process_entry_with_trace(
-        subscription=sub,
-        user=None,
-        entry=EntryContentContext(
-            title="原标题",
-            summary="原摘要",
-            content="原正文",
-            link="https://example.com/entry",
-            author="author",
-            feed_title="Feed",
-            feed_link="https://example.com/feed.xml",
-            raw_xml="<item><title>原标题</title></item>",
-        ),
-    )
-
-    assert result.entry.title == "新标题"
-    assert result.entry.summary == "新摘要"
-    assert result.entry.content == "新正文"
-    assert result.trace[0]["scope"] == "plaintext"
-    assert result.trace[0]["fallback"] is False
-
-
-@pytest.mark.asyncio
-async def test_ai_transform_xml_reparses_raw_xml_and_updates_entry():
-    provider = FakeProvider(
-        '{"raw_xml":"<item><title>新标题</title><link>https://example.com/new</link><description><![CDATA[<p>新的正文</p><img src=\\"https://example.com/image.jpg\\"></p>]]></description><author>new-author</author></item>"}'
-    )
-    runtime = ContentHandlerRuntime(FakeProviderContext(provider))
-    sub = Subscription(
-        id=1,
-        user_id="user-1",
-        feed_id=10,
-        handlers_mode="override",
-        handlers=[
-            {
-                "id": "builtin.ai_transform.default",
-                "type": "builtin",
-                "name": "ai_transform",
-                "status": 1,
-                "config": {"prompt": "清理广告并重写 XML", "scope": "xml"},
-            }
-        ],
-    )
-
-    result = await runtime.process_entry_with_trace(
-        subscription=sub,
-        user=None,
-        entry=EntryContentContext(
-            title="原标题",
-            summary="原摘要",
-            content="原正文",
-            link="https://example.com/entry",
-            author="author",
-            feed_title="Feed",
-            feed_link="https://example.com/feed.xml",
-            raw_xml="<item><title>原标题</title></item>",
-        ),
-    )
-
-    assert result.entry.title == "新标题"
-    assert result.entry.link == "https://example.com/new"
-    assert "新的正文" in result.entry.content
-    assert "https://example.com/image.jpg" in result.entry.media_urls
-    assert result.entry.raw_xml.startswith("<item>")
-    assert result.trace[0]["scope"] == "xml"
 
 
 @pytest.mark.asyncio
@@ -688,16 +372,11 @@ async def test_dispatch_cleans_processed_generated_layout_when_notify_disabled(
         ),
     )
 
-    class RuntimeWithGeneratedLayout(ContentHandlerRuntime):
-        async def process_entry_with_trace(self, **kwargs):
-            return HandlerProcessResult(entry=processed_entry, allow=True)
-
     dispatcher = NotificationDispatcher(
         subscription_repo=sub_repo,
         user_repo=user_repo,
         push_history_repo=history_repo,
         sender_provider=FakeSenderProvider(sender),
-        content_handler_runtime=RuntimeWithGeneratedLayout(),
     )
 
     stats = await dispatcher.dispatch_to_feed_subscribers(
@@ -705,15 +384,7 @@ async def test_dispatch_cleans_processed_generated_layout_when_notify_disabled(
         content="fallback",
         entry_title="Title",
         entry_link="https://example.com/entry",
-        raw_entry=EntryContentContext(
-            title="Title",
-            summary="Raw",
-            content="Raw",
-            link="https://example.com/entry",
-            author="",
-            feed_title="Feed",
-            feed_link="https://example.com/feed.xml",
-        ),
+        raw_entry=processed_entry,
     )
 
     assert stats == {"success": 0, "failed": 0, "pending": 0, "skipped": 1}
@@ -1591,127 +1262,6 @@ async def test_dispatch_inherits_effective_options_from_user():
     assert saved.status == "skipped"
     assert saved.fail_reason == "notify disabled"
     assert saved.max_retries == 0
-
-
-@pytest.mark.asyncio
-async def test_dispatch_strips_removed_xml_parse_handler_and_keeps_clean_content():
-    sender = FakeSender()
-    sub = Subscription(
-        id=1,
-        user_id="user-1",
-        feed_id=10,
-        platform_name="telegram",
-        target_session="telegram:Group:1",
-        handlers_mode="override",
-        handlers=[
-            {
-                "id": "builtin.xml_parse.default",
-                "type": "builtin",
-                "name": "xml_parse",
-                "status": 1,
-                "config": {},
-            }
-        ],
-    )
-    sub_repo = AsyncMock()
-    sub_repo.get_active_by_feed_id.return_value = [sub]
-    history_repo = AsyncMock()
-    history_repo.exists_success_by_scope_and_guid.return_value = False
-    history_repo.save.side_effect = lambda history: history
-
-    dispatcher = NotificationDispatcher(
-        subscription_repo=sub_repo,
-        push_history_repo=history_repo,
-        sender_provider=FakeSenderProvider(sender),
-    )
-
-    stats = await dispatcher.dispatch_to_feed_subscribers(
-        feed_id=10,
-        content="clean caller content",
-        entry_title="title",
-        entry_link="https://example.com/entry",
-        entry_guid="guid-1",
-        raw_entry=EntryContentContext(
-            title="title",
-            summary="Before<br />After",
-            content="Before<br />After",
-            link="https://example.com/entry",
-            author="author",
-            feed_title="Feed",
-            feed_link="https://example.com/feed.xml",
-            raw_xml="<item><title>title</title></item>",
-        ),
-    )
-
-    assert stats == {"success": 1, "failed": 0, "pending": 0, "skipped": 0}
-    first_saved = history_repo.save.await_args_list[0].args[0]
-    assert "Before\nAfter" in first_saved.content
-    assert "<br" not in first_saved.content
-    assert "clean caller content" not in first_saved.content
-    request, _context = sender.requests[0]
-    assert request.message == first_saved.content
-
-
-@pytest.mark.asyncio
-async def test_dispatch_ai_filter_false_writes_skipped_history_without_send():
-    sender = FakeSender()
-    provider = FakeProvider('{"allow":false,"reason":"广告"}')
-    sub = Subscription(
-        id=1,
-        user_id="user-1",
-        feed_id=10,
-        platform_name="telegram",
-        target_session="telegram:Group:1",
-        handlers_mode="override",
-        handlers=[
-            {
-                "id": "builtin.ai_filter.default",
-                "type": "builtin",
-                "name": "ai_filter",
-                "status": 1,
-                "config": {"prompt": "跳过广告", "input_scope": "text"},
-            }
-        ],
-    )
-    sub_repo = AsyncMock()
-    sub_repo.get_active_by_feed_id.return_value = [sub]
-    history_repo = AsyncMock()
-    history_repo.exists_success_by_scope_and_guid.return_value = False
-    history_repo.save.side_effect = lambda history: history
-
-    dispatcher = NotificationDispatcher(
-        subscription_repo=sub_repo,
-        push_history_repo=history_repo,
-        sender_provider=FakeSenderProvider(sender),
-        content_handler_runtime=ContentHandlerRuntime(FakeProviderContext(provider)),
-    )
-
-    stats = await dispatcher.dispatch_to_feed_subscribers(
-        feed_id=10,
-        content="content",
-        entry_title="title",
-        entry_link="https://example.com/entry",
-        entry_guid="guid-1",
-        raw_entry=EntryContentContext(
-            title="title",
-            summary="summary",
-            content="content",
-            link="https://example.com/entry",
-            author="author",
-            feed_title="Feed",
-            feed_link="https://example.com/feed.xml",
-        ),
-    )
-
-    assert stats == {"success": 0, "failed": 0, "pending": 0, "skipped": 1}
-    assert sender.requests == []
-    history_repo.save.assert_awaited_once()
-    saved = history_repo.save.await_args.args[0]
-    assert saved.status == "skipped"
-    assert saved.max_retries == 0
-    assert saved.fail_reason == "广告"
-    assert saved.handler_trace[0]["allow"] is False
-    assert saved.handler_trace[0]["reason"] == "广告"
 
 
 @pytest.mark.asyncio

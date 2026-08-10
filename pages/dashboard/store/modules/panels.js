@@ -2,9 +2,7 @@ import {
   getFeedItems
 } from '../../js/api.js';
 import {
-  createEditFormFromSub,
-  traceStatusText,
-  traceReasonText
+  createEditFormFromSub
 } from '../helpers.js';
 
 export const panelsModule = {
@@ -59,19 +57,5 @@ export const panelsModule = {
     if (this.panelMode === 'edit') return this.isPending(`sub:save:${this.editForm.id}`);
     if (this.panelMode === 'history-detail') return false;
     return false;
-  },
-
-  historyTraceSteps() {
-    return Array.isArray(this.historyDetail?.handler_trace)
-      ? this.historyDetail.handler_trace
-      : [];
-  },
-
-  historyTraceStatus(step) {
-    return traceStatusText(step);
-  },
-
-  historyTraceReason(step) {
-    return traceReasonText(step);
   }
 };

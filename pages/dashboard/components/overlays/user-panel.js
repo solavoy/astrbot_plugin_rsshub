@@ -10,15 +10,6 @@ export const userPanelTemplate = String.raw`
         <h4>基本信息</h4>
         <div class="detail-row"><span class="detail-label">用户 ID</span><span class="detail-value">{{ userEditForm.user_id }}</span></div>
         <div class="setting-row"><span class="setting-label">用户状态</span><select class="select-input" v-model.number="userEditForm.state"><option :value="-1">已封禁</option><option :value="1">用户</option></select></div>
-        <div class="form-group">
-          <label>内容处理链</label>
-          <div class="handler-editor">
-            <div class="handler-json">
-              <textarea v-model="userEditForm.handlers_json" rows="10"></textarea>
-              <button type="button" class="btn btn-secondary btn-small" @click="applyHandlersJson(userEditForm)">应用 JSON</button>
-            </div>
-          </div>
-        </div>
       </div>
       <div class="panel-section">
         <h4>推送设置</h4>

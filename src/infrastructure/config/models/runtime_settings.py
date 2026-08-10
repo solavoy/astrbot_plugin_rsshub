@@ -99,14 +99,6 @@ class SubscriptionDefaults:
 
 
 @dataclass(frozen=True)
-class ContentHandlerSettings:
-    """Global defaults for builtin content handlers."""
-
-    ai_provider_id: str = ""
-    ai_persona_id: str = ""
-
-
-@dataclass(frozen=True)
 class SenderStrategySettings:
     """Per-platform sender strategy toggles."""
 
@@ -172,9 +164,6 @@ class ApplicationSettings:
     scheduler: SchedulerSettings = field(default_factory=SchedulerSettings)
     subscription_defaults: SubscriptionDefaults = field(
         default_factory=SubscriptionDefaults
-    )
-    content_handlers: ContentHandlerSettings = field(
-        default_factory=ContentHandlerSettings
     )
     sender_strategies: SenderStrategySettings = field(
         default_factory=SenderStrategySettings

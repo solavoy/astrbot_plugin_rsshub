@@ -26,10 +26,7 @@
    - 调度
    - 发送
    - 审计
-2. **内容处理可替换**
-   - 通过 handlers 链串接
-   - AI 失败时默认放行，不阻断 RSS
-3. **管理路径清晰**
+2. **管理路径清晰**
    - 命令处理用户拥有的数据入口
    - Plugin Pages 负责已有数据的管理、排障和可视化
    - AI tools 负责自动化编排
@@ -42,9 +39,6 @@
 - 用户/订阅/推送历史持久化
 - Plugin Pages 管理界面
 - 多平台 sender 适配
-- 内置 content handlers:
-  - `ai_filter`
-  - `ai_transform`
 
 ### 插件不再负责
 
@@ -70,23 +64,21 @@
    - 订阅管理
    - 会话默认值读取
    - XML 即时推送
-   - handler 读写
 3. Plugin Pages
-   - 订阅、用户、Feed、推送历史、处理器、默认设置、数据管理
+   - 订阅、用户、Feed、推送历史、默认设置、数据管理
 
 ## 当前实现取向
 
 这个项目在 v2.0.0 阶段的取向可以概括为三点：
 
 1. 把“可靠发送”放在第一优先级。
-2. 把“内容加工”收敛到 handler 链，而不是散落在多个旧配置里。
-3. 把“可管理性”前移到 Plugin Pages 和 push history。
+2. 把“可管理性”前移到 Plugin Pages 和 push history。
 
 ## 为什么保留 DDD 分层
 
 这里继续保留 DDD 分层，不是为了形式，而是因为这个插件天然有多类变化频率完全不同的东西：
 
-- 领域规则：订阅、用户、push history、继承值、handler spec
+- 领域规则：订阅、用户、push history、继承值
 - 用例编排：订阅、取消订阅、测试推送、批量操作
 - 基础设施细节：SQLite、AstrBot config、平台 sender、KB source
 - 外部接口：聊天命令、Web API、LLM tools、Plugin Pages
@@ -106,29 +98,11 @@
 
 这让“修一个推送 bug”不需要顺带碰 UI、命令和配置加载。
 
-## 为什么保留 handlers
-
-旧版内容处理曾经散落在：
-
-- 配置项
-- formatter
-- polling service
-- 独立过滤器
-
-现在统一收口到 handlers，原因很直接：
-
-- 能记录 trace
-- 能挂在订阅/用户配置上
-- 能清楚表达顺序
-- 能让 AI 行为变成受控步骤，而不是隐含副作用
-
-这比把 AI 逻辑塞进 formatter 或 polling service 更容易维护。
-
 ## 为什么保留 Plugin Pages
 
 这个插件的数据量和排障需求已经超过“只靠命令输出文本”的阶段。Plugin Pages 的价值在于：
 
-- 让 push history、handler trace、失败原因可见
+- 让 push history、失败原因可见
 - 让用户/Feed/订阅状态能够联动查看
 - 让默认配置、缓存与导出文件可管理
 
@@ -146,7 +120,6 @@
 
 - `content` 必须保存最终可发送文本
 - `raw_xml` 保留原始条目
-- `handler_trace` 只记录执行摘要，不泄漏 provider 内部 prompt
 - 媒体失败时追加原始链接到失败侧文本
 
 ## 对维护者最重要的事实

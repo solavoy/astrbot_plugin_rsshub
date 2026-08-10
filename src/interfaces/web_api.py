@@ -38,7 +38,6 @@ from ..application.commands.update_subscription_cmd import UpdateSubscriptionCom
 from ..application.queries.get_feed_items_query import GetFeedItemsQuery
 from ..application.services.feed_polling_service import FeedPollingService
 from ..application.services.notification_dispatcher import NotificationDispatcher
-from ..domain.entities.handlers import list_handler_registry
 from ..domain.repositories.feed_repository import FeedRepository
 from ..domain.repositories.push_history_repository import PushHistoryRepository
 from ..domain.repositories.subscription_repository import SubscriptionRepository
@@ -154,13 +153,6 @@ class WebApiHandler:
                 "/plugin-settings",
                 self.handle_get_plugin_settings,
                 "获取插件设置",
-            ),
-            ("GET", "/handlers", self.handle_handlers, "获取 handler registry"),
-            (
-                "GET",
-                "/handlers/schema",
-                self.handle_handlers_schema,
-                "获取 handler schema",
             ),
             (
                 "POST",
@@ -356,8 +348,6 @@ class WebApiHandler:
                     "interval": s.interval,
                     "notify": s.notify,
                     "send_mode": s.send_mode,
-                    "handlers_mode": s.handlers_mode,
-                    "handlers": s.get_handlers(),
                     "length_limit": s.length_limit,
                     "display_author": s.display_author,
                     "display_via": s.display_via,
@@ -492,7 +482,6 @@ class WebApiHandler:
                     "interval": u.interval,
                     "notify": u.notify,
                     "send_mode": u.send_mode,
-                    "handlers": u.get_handlers(),
                     "length_limit": u.length_limit,
                     "display_author": u.display_author,
                     "display_via": u.display_via,
@@ -1226,15 +1215,6 @@ class WebApiHandler:
             }
         )
 
-    async def handle_handlers(self):
-        """获取 handler registry metadata/schema。"""
-        return jsonify({"ok": True, "items": list_handler_registry()})
-
-    async def handle_handlers_schema(self):
-        """获取 Plugin Pages 使用的 handler schema。"""
-        handlers = list_handler_registry()
-        return jsonify({"ok": True, "items": handlers, "handlers": handlers})
-
     async def handle_set_plugin_settings(self):
         """更新插件级订阅默认值"""
         if self._config is None:
@@ -1757,7 +1737,6 @@ class WebApiHandler:
                     "content": h.content,
                     "raw_xml": h.raw_xml,
                     "media_urls": h.media_urls,
-                    "handler_trace": getattr(h, "handler_trace", None),
                     "entry_title": h.entry_title,
                     "entry_link": h.entry_link,
                     "entry_guid": h.entry_guid,
