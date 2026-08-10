@@ -11,10 +11,27 @@ from ....shared.constants import (
     PLATFORM_STRATEGY_TEMPLATE_KEYS,
     QQ_OFFICIAL_MARKDOWN_MODE_DEFAULT,
     QQ_OFFICIAL_MARKDOWN_MODE_OPTIONS,
+    SENDER_MARKDOWN_PLATFORM_DEFAULT,
+    SENDER_MARKDOWN_PLATFORM_OPTIONS,
     SENDER_STRATEGY_ENABLED_PLATFORMS,
 )
 
 _SENDER_STRATEGY_KEYS: tuple[str, ...] = SENDER_STRATEGY_ENABLED_PLATFORMS
+_MARKDOWN_PLATFORM_KEYS: frozenset[str] = frozenset(SENDER_MARKDOWN_PLATFORM_OPTIONS)
+
+
+def _normalize_markdown_platforms(value: Any) -> list[str]:
+    """把配置的 markdown 平台列表归一化为已知平台名（去重、保序）。"""
+    if isinstance(value, str):
+        raw = value.replace(",", "\n").splitlines()
+    else:
+        raw = value or []
+    platforms: list[str] = []
+    for item in raw:
+        name = str(item).strip().lower()
+        if name in _MARKDOWN_PLATFORM_KEYS and name not in platforms:
+            platforms.append(name)
+    return platforms
 
 _PLATFORM_STRATEGY_TEMPLATE_KEYS: dict[str, str] = PLATFORM_STRATEGY_TEMPLATE_KEYS
 
@@ -84,6 +101,10 @@ class SenderStrategiesConfig(BaseModel):
     telegram: bool = Field(default=True, description="Telegram策略")
     aiocqhttp: bool = Field(default=True, description="QQ策略")
     qq_official: bool = Field(default=True, description="QQ官方策略")
+    markdown_platforms: list[str] = Field(
+        default_factory=lambda: list(SENDER_MARKDOWN_PLATFORM_DEFAULT),
+        description="使用 Folo 风格 Markdown 的消息渠道",
+    )
     telegram_settings: PlatformSenderStrategyConfig = Field(
         default_factory=PlatformSenderStrategyConfig, alias="telegram_config"
     )
@@ -143,21 +164,24 @@ class SenderStrategiesConfig(BaseModel):
                         if qq_official_value is not None
                         else qq_official_config
                     )
-            return cls.model_validate(
-                {
-                    **known_values,
-                    PLATFORM_QQ_OFFICIAL: known_values[PLATFORM_QQ_OFFICIAL],
-                    "telegram_config": PlatformSenderStrategyConfig.from_dict(
-                        telegram_source
-                    ),
-                    "aiocqhttp_config": PlatformSenderStrategyConfig.from_dict(
-                        aiocqhttp_source
-                    ),
-                    "qq_official_config": PlatformSenderStrategyConfig.from_dict(
-                        qq_official_source
-                    ),
-                }
-            )
+            config_values: dict[str, Any] = {
+                **known_values,
+                PLATFORM_QQ_OFFICIAL: known_values[PLATFORM_QQ_OFFICIAL],
+                "telegram_config": PlatformSenderStrategyConfig.from_dict(
+                    telegram_source
+                ),
+                "aiocqhttp_config": PlatformSenderStrategyConfig.from_dict(
+                    aiocqhttp_source
+                ),
+                "qq_official_config": PlatformSenderStrategyConfig.from_dict(
+                    qq_official_source
+                ),
+            }
+            if "markdown_platforms" in data:
+                config_values["markdown_platforms"] = _normalize_markdown_platforms(
+                    data.get("markdown_platforms")
+                )
+            return cls.model_validate(config_values)
         if isinstance(data, str):
             parts = data.replace(",", "\n").splitlines()
             enabled = {part.strip() for part in parts if part.strip()}
@@ -204,6 +228,7 @@ class SenderStrategiesConfig(BaseModel):
         ]
         return {
             "enabled_platforms": self.to_enabled_platforms(),
+            "markdown_platforms": list(self.markdown_platforms),
             "platform_strategies": platform_strategies,
         }
 

@@ -24,7 +24,6 @@ ready()
     }, 10000);
     window.addEventListener('beforeunload', () => {
       if (pollTimer) clearInterval(pollTimer);
-      store.stopRouteKbPolling();
     });
   })
   .catch((err) => store.showToast(`初始化失败: ${err.message}`, 'error'));

@@ -342,10 +342,6 @@ def test_heal_astrbot_plugin_config_projects_dirty_config_to_schema():
                 "ffmpeg_mirror": "bad",
                 "ffmpeg_mirror_custom_url": 123,
             },
-            "route_knowledge": {
-                "source_mode": "bad",
-                "timeout": 999,
-            },
             "content_handlers": "bad",
             "sender_strategies": {
                 "telegram": False,
@@ -379,8 +375,7 @@ def test_heal_astrbot_plugin_config_projects_dirty_config_to_schema():
     assert healed["media"]["ffmpeg_mirror_custom_url"] == ""
     assert healed["media"]["cache_enabled"] is True
     assert healed["media"]["cache_ttl_seconds"] == 60
-    assert healed["route_knowledge"]["source_mode"] == "speed_test"
-    assert healed["route_knowledge"]["timeout"] == 300
+    assert "route_knowledge" not in healed
     assert "ffmpeg" not in healed
     assert healed["media"]["video_transcode"] is False
     assert healed["media"]["video_transcode_timeout"] == 120
@@ -391,6 +386,7 @@ def test_heal_astrbot_plugin_config_projects_dirty_config_to_schema():
     }
     assert healed["sender_strategies"] == {
         "enabled_platforms": ["telegram", "aiocqhttp", "qq_official"],
+        "markdown_platforms": ["telegram"],
         "platform_strategies": [],
     }
 
@@ -427,10 +423,6 @@ def test_heal_astrbot_plugin_config_returns_no_changes_for_clean_config():
         "http_config": {
             key: value["default"]
             for key, value in schema["http_config"]["items"].items()
-        },
-        "route_knowledge": {
-            key: value["default"]
-            for key, value in schema["route_knowledge"]["items"].items()
         },
         "media": {
             key: value["default"] for key, value in schema["media"]["items"].items()
@@ -507,6 +499,40 @@ def test_sender_strategies_parse_nested_enabled_platforms_config():
     assert config.sender_strategies.qq_official is True
 
 
+def test_sender_strategies_markdown_platforms_roundtrip_and_defaults():
+    from astrbot_plugin_rsshub.src.infrastructure.config import RsshubPluginConfig
+
+    # 缺省：仅 Telegram 使用 Markdown
+    config = RsshubPluginConfig.from_astrbot_config({})
+    assert config.sender_strategies.markdown_platforms == ["telegram"]
+
+    # 勾选 telegram + aiocqhttp 后 to_config_dict 保留勾选
+    config = RsshubPluginConfig.from_astrbot_config(
+        {
+            "sender_strategies": {
+                "enabled_platforms": ["telegram", "aiocqhttp"],
+                "markdown_platforms": ["telegram", "aiocqhttp"],
+            }
+        }
+    )
+    assert config.sender_strategies.markdown_platforms == ["telegram", "aiocqhttp"]
+    assert config.to_astrbot_config()["sender_strategies"]["markdown_platforms"] == [
+        "telegram",
+        "aiocqhttp",
+    ]
+
+    # 显式空列表：任何渠道都不使用 Markdown
+    config = RsshubPluginConfig.from_astrbot_config(
+        {
+            "sender_strategies": {
+                "enabled_platforms": ["telegram"],
+                "markdown_platforms": [],
+            }
+        }
+    )
+    assert config.sender_strategies.markdown_platforms == []
+
+
 def test_sender_strategies_parse_empty_list_as_all_disabled():
     from astrbot_plugin_rsshub.src.infrastructure.config import RsshubPluginConfig
 
@@ -548,6 +574,7 @@ def test_config_save_writes_single_sender_strategy_template_list_with_enabled_pl
     assert astrbot_config.saved is True
     assert astrbot_config["sender_strategies"] == {
         "enabled_platforms": ["telegram", "qq_official"],
+        "markdown_platforms": ["telegram"],
         "platform_strategies": [],
     }
 
@@ -1262,56 +1289,6 @@ async def test_subscription_settings_rejects_interval_below_configured_minimum(
     assert result.success is False
     assert "最小监控间隔 5 分钟" in result.message
     repo.update_options.assert_not_awaited()
-
-
-def test_application_settings_maps_route_knowledge_provider_ids():
-    from astrbot_plugin_rsshub.src.infrastructure.config import (
-        RsshubPluginConfig,
-        build_application_settings,
-    )
-
-    config = RsshubPluginConfig.from_astrbot_config(
-        {
-            "route_knowledge": {
-                "embedding_provider_id": "embedding-configured",
-                "rerank_provider_id": "rerank-configured",
-            },
-        }
-    )
-
-    settings = build_application_settings(config)
-
-    assert settings.route_knowledge.embedding_provider_id == "embedding-configured"
-    assert settings.route_knowledge.rerank_provider_id == "rerank-configured"
-
-
-def test_application_settings_normalizes_legacy_route_knowledge_urls():
-    from astrbot_plugin_rsshub.src.infrastructure.config import (
-        build_application_settings,
-    )
-
-    settings = build_application_settings(
-        {
-            "route_knowledge": {
-                "source_base_url": (
-                    "https://ghfast.top/https://raw.githubusercontent.com/"
-                    "FlanChanXwO/astrbot_plugin_rsshub/rsshub-routes-knowledgebase"
-                ),
-                "fallback_base_url": (
-                    "https://raw.githubusercontent.com/"
-                    "FlanChanXwO/astrbot_plugin_rsshub/rsshub-routes-knowledgebase"
-                ),
-            }
-        }
-    )
-
-    assert settings.route_knowledge.source_base_url == (
-        "https://ghfast.top/https://raw.githubusercontent.com/"
-        "FlanChanXwO/rsshub-routes-knowledgebase/main"
-    )
-    assert settings.route_knowledge.fallback_base_url == (
-        "https://raw.githubusercontent.com/FlanChanXwO/rsshub-routes-knowledgebase/main"
-    )
 
 
 def test_application_settings_maps_history_retention_days():

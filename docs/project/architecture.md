@@ -74,7 +74,6 @@ LLM tools 的入口仍由 `main.py` 注册；具体实现按主题放在 `src/ap
 3. Handler 运行时
 4. 文本格式化与平台消息组件排序
 5. 会话级串行发送队列
-6. RSSHub Routes 知识库同步
 
 下面只给全景，细节分别下沉到独立章节。
 
@@ -151,7 +150,6 @@ AI tool `rss_push_xml_entry` 不依赖 `sub_id`。它直接：
 flowchart TD
   A["Scheduler / Commands / Web API / LLM Tools"] --> B["FeedPollingService"]
   A --> C["NotificationDispatcher"]
-  A --> D["RouteKnowledgeSyncService"]
 
   B --> E["FeedFetcher + FeedParser"]
   B --> F["FeedRepository"]
@@ -166,9 +164,6 @@ flowchart TD
   H --> L["Handler Registry"]
   C --> M["EntryTextFormatter"]
   K --> N["MessageComponentSorter / sender adapters"]
-
-  D --> O["RouteKnowledgeSource"]
-  D --> P["RouteKnowledgeRepository"]
 ```
 
 ## 配置职责
@@ -178,7 +173,6 @@ flowchart TD
 由 `_conf_schema.json` 暴露，主要包含：
 
 - 基础抓取/超时/代理
-- Routes KB 同步相关
 - 全局 AI handler provider/persona
 - 平台 sender 策略
 
@@ -195,7 +189,7 @@ flowchart TD
 
 `rsshub_user` 是插件用户事实表。任何写入订阅或推送历史的入口都必须确保对应 `user_id` 存在；启动期数据库自愈也会扫描订阅和推送历史引用，补齐旧库缺失的用户行。Dashboard 删除用户会删除该用户订阅，推送历史默认保留，只有显式选择时才删除历史。
 
-详见 [`handlers.md`](./handlers.md) 与 [`knowledge.md`](./knowledge.md) 中的状态管理部分。
+详见 [`handlers.md`](./handlers.md) 中的状态管理部分。
 
 ## 管理界面职责
 
@@ -206,7 +200,6 @@ Plugin Pages 当前管理：
 - Feed 列表
 - 推送历史
 - 处理器列表
-- Routes 知识库
 - 默认订阅设置
 - 数据管理
 
@@ -238,4 +231,3 @@ Plugin Pages 当前不负责：
 - [`dispatch.md`](./dispatch.md)
 - [`handlers.md`](./handlers.md)
 - [`formatting.md`](./formatting.md)
-- [`knowledge.md`](./knowledge.md)

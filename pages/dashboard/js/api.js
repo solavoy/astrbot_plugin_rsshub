@@ -276,18 +276,6 @@ export async function getPushHistory({
   };
 }
 
-export async function getRouteKbStatus() {
-  return await apiGet('route-kb/status');
-}
-
-export async function syncRouteKb() {
-  return await apiPost('route-kb/sync', {});
-}
-
-export async function getRouteKbTask() {
-  return await apiGet('route-kb/task');
-}
-
 export async function deletePushHistory(historyId) {
   return await apiPost('push-history/delete', { history_id: historyId });
 }

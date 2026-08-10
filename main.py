@@ -373,42 +373,6 @@ class RSSHubPlugin(Star):
         yield event.plain_result("没有找到帮助图片")
 
     @filter.permission_type(filter.PermissionType.ADMIN)
-    @filter.command("rsshub_kb_init", alias={"rss知识库初始化", "RSS知识库初始化"})
-    async def rsshub_kb_init(self, event: AstrMessageEvent):
-        """初始化 RSSHub Routes 知识库。"""
-        result = await _h.handle_rsshub_kb_init(self._deps)
-        if result.get("plain"):
-            yield event.plain_result(result["plain"])
-
-    @filter.permission_type(filter.PermissionType.ADMIN)
-    @filter.command("rsshub_kb_sync", alias={"rss知识库同步", "RSS知识库同步"})
-    async def rsshub_kb_sync(self, event: AstrMessageEvent):
-        """启动 RSSHub Routes 知识库同步任务。"""
-        result = await _h.handle_rsshub_kb_sync(self._deps)
-        if result.get("plain"):
-            yield event.plain_result(result["plain"])
-
-    @filter.permission_type(filter.PermissionType.ADMIN)
-    @filter.command(
-        "rsshub_kb_status", alias={"rss知识库同步状态", "RSS知识库同步状态"}
-    )
-    async def rsshub_kb_status(self, event: AstrMessageEvent):
-        """查看 RSSHub Routes 知识库状态。"""
-        result = await _h.handle_rsshub_kb_status(self._deps)
-        if result.get("plain"):
-            yield event.plain_result(result["plain"])
-
-    @filter.permission_type(filter.PermissionType.ADMIN)
-    @filter.command(
-        "rsshub_kb_task", alias={"rss知识库近期同步任务", "RSS知识库近期同步任务"}
-    )
-    async def rsshub_kb_task(self, event: AstrMessageEvent):
-        """查看最近 RSSHub Routes 知识库同步任务。"""
-        result = _h.handle_rsshub_kb_task(self._deps)
-        if result.get("plain"):
-            yield event.plain_result(result["plain"])
-
-    @filter.permission_type(filter.PermissionType.ADMIN)
     @filter.command("sub_test", alias={"测试订阅"})
     async def test_sub(self, event: AstrMessageEvent, args: str = ""):
         """管理员测试推送。

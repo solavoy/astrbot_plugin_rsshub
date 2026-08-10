@@ -38,9 +38,6 @@ from .src.application.services.agent_xml_push_service import AgentXmlPushService
 from .src.application.services.content_handlers import ContentHandlerRuntime
 from .src.application.services.feed_polling_service import FeedPollingService
 from .src.application.services.notification_dispatcher import NotificationDispatcher
-from .src.application.services.route_knowledge_service import (
-    RouteKnowledgeSyncService,
-)
 from .src.application.services.session_push_queue import SessionPushQueue
 from .src.domain.repositories.feed_repository import FeedRepository
 from .src.domain.repositories.subscription_repository import SubscriptionRepository
@@ -53,10 +50,6 @@ from .src.infrastructure.config import (
 )
 from .src.infrastructure.fetcher import CloudflareBypassFetcher
 from .src.infrastructure.fetcher.rss.parser import RSSParser
-from .src.infrastructure.knowledge import (
-    AstrBotRouteKnowledgeRepository,
-    build_route_knowledge_source,
-)
 from .src.infrastructure.media import MediaDownloader
 from .src.infrastructure.messaging import (
     DefaultMessageSender,
@@ -80,7 +73,6 @@ from .src.infrastructure.rendering.font_manager import (
 from .src.infrastructure.schedule import RSSScheduler
 from .src.infrastructure.utils import (
     get_logger,
-    get_plugin_cache_dir,
     get_plugin_data_dir,
 )
 from .src.infrastructure.utils.chromium_deps import ensure_chromium_deps
@@ -136,7 +128,6 @@ class PluginDeps(TypedDict, total=False):
     feed_repo: FeedRepository
     subscription_repo: SubscriptionRepository
     push_history_repo: Any
-    route_knowledge_service: RouteKnowledgeSyncService
     notification_dispatcher: NotificationDispatcher
     agent_xml_push_service: AgentXmlPushService
 
@@ -151,12 +142,10 @@ class PluginRuntime:
     web_api: WebApiHandler
     push_job_queue: SessionPushQueue
     notification_dispatcher: NotificationDispatcher
-    route_knowledge_service: RouteKnowledgeSyncService
     db_initialized: bool
 
     async def stop(self) -> None:
         """Stop runtime-owned background work and shared resources."""
-        await self.route_knowledge_service.close()
         await self.scheduler.stop()
         await self.push_job_queue.stop_all()
         db = get_database()
@@ -208,7 +197,6 @@ async def create_plugin_runtime(
             web_api=web_api,
             push_job_queue=queue,
             notification_dispatcher=notification_dispatcher,
-            route_knowledge_service=deps["route_knowledge_service"],
             db_initialized=True,
         )
         logger.info("RSSHub 插件初始化完成")
@@ -393,11 +381,14 @@ def _configure_message_senders(app_settings: ApplicationSettings) -> None:
         min_valid_bytes=app_settings.media_platform_limits.min_valid_bytes
     )
     EntryTextFormatter.configure_table_to_image(app_settings.media.table_to_image)
+    EntryTextFormatter.configure_markdown_platforms(
+        app_settings.sender_strategies.markdown_platforms
+    )
     logger.info(
         "sender behavior configured: gif_transcode=%s, gif_profile=%s, "
         "video_transcode=%s, "
         "ffmpeg_source=%s, image_relay=%s, media_relay=%s, "
-        "napcat_stream=%s, table_to_image=%s",
+        "napcat_stream=%s, table_to_image=%s, markdown_platforms=%s",
         app_settings.media.gif_transcode,
         app_settings.media.gif_transcode_profile,
         app_settings.media.video_transcode,
@@ -406,6 +397,7 @@ def _configure_message_senders(app_settings: ApplicationSettings) -> None:
         app_settings.media.media_relay_base_url or "(none)",
         app_settings.media_platform_limits.onebot_napcat_stream_mode,
         app_settings.media.table_to_image,
+        ",".join(app_settings.sender_strategies.markdown_platforms) or "(none)",
     )
 
 
@@ -456,21 +448,6 @@ async def _build_dependencies(
         notification_dispatcher=notification_dispatcher,
         history_entry_limit=app_settings.scheduler.history_entry_limit,
     )
-    route_source = await build_route_knowledge_source(
-        app_settings.route_knowledge,
-        proxy=app_settings.http.proxy,
-    )
-    route_repository = AstrBotRouteKnowledgeRepository(
-        context=context,
-        settings=app_settings.route_knowledge,
-    )
-    route_knowledge_service = RouteKnowledgeSyncService(
-        settings=app_settings.route_knowledge,
-        source=route_source,
-        repository=route_repository,
-        state_dir=get_plugin_cache_dir("route_knowledge"),
-    )
-
     deps = PluginDeps(
         subscribe_cmd=SubscribeFeedCommand(
             subscription_repo=sub_repo,
@@ -513,7 +490,6 @@ async def _build_dependencies(
         feed_repo=feed_repo,
         subscription_repo=sub_repo,
         push_history_repo=push_history_repo,
-        route_knowledge_service=route_knowledge_service,
         notification_dispatcher=notification_dispatcher,
         agent_xml_push_service=AgentXmlPushService(notification_dispatcher),
     )
@@ -573,7 +549,6 @@ def _register_web_api(
         user_repo=get_user_repository(),
         push_history_repo=get_push_history_repository(),
         notification_dispatcher=deps["notification_dispatcher"],
-        route_knowledge_service=deps["route_knowledge_service"],
         config=config,
         raw_config=raw_config,
     )

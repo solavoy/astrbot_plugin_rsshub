@@ -371,6 +371,9 @@ class AgentXmlPushService:
                     tags=_collect_xml_tags(root),
                 ),
                 options.format_options,
+                output_format=EntryTextFormatter.resolve_output_format(
+                    platform_name
+                ),
             )
             media_items = FeedPollingService._media_items_from_parsed(parsed.media)
             media_urls = [

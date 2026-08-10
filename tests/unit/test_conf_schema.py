@@ -16,7 +16,6 @@ def test_conf_schema_is_scoped_to_startup_credentials_and_sender_strategies():
         "content_handlers",
         "http_config",
         "media",
-        "route_knowledge",
         "sender_strategies",
     }
     content_handler_items = schema["content_handlers"]["items"]
@@ -25,53 +24,7 @@ def test_conf_schema_is_scoped_to_startup_credentials_and_sender_strategies():
     assert content_handler_items["ai_persona_id"]["_special"] == "select_persona"
     assert content_handler_items["ai_persona_id"]["default"] == ""
 
-    route_knowledge_items = schema["route_knowledge"]["items"]
-    assert route_knowledge_items["kb_name"]["default"] == "RSSHub Routes"
-    assert route_knowledge_items["embedding_provider_id"]["default"] == ""
-    assert (
-        route_knowledge_items["embedding_provider_id"]["_special"]
-        == "select_provider:embedding"
-    )
-    assert route_knowledge_items["rerank_provider_id"]["default"] == ""
-    assert (
-        route_knowledge_items["rerank_provider_id"]["_special"]
-        == "select_provider:rerank"
-    )
-    assert route_knowledge_items["source_mode"]["default"] == "speed_test"
-    assert route_knowledge_items["source_mode"]["options"] == [
-        "speed_test",
-        "mirror",
-        "auto",
-        "github",
-        "local",
-    ]
-    source_options = [
-        "https://raw.githubusercontent.com/FlanChanXwO/rsshub-routes-knowledgebase/main",
-        "https://ghfast.top/https://raw.githubusercontent.com/FlanChanXwO/rsshub-routes-knowledgebase/main",
-    ]
-    assert route_knowledge_items["source_base_url"]["default"] == source_options[0]
-    assert route_knowledge_items["source_base_url"]["options"] == source_options
-    assert route_knowledge_items["fallback_base_url"]["options"] == source_options
-    assert route_knowledge_items["timeout"]["slider"] == {
-        "min": 1,
-        "max": 300,
-        "step": 1,
-    }
-    assert route_knowledge_items["batch_size"]["slider"] == {
-        "min": 1,
-        "max": 256,
-        "step": 1,
-    }
-    assert route_knowledge_items["tasks_limit"]["slider"] == {
-        "min": 1,
-        "max": 32,
-        "step": 1,
-    }
-    assert route_knowledge_items["max_retries"]["slider"] == {
-        "min": 0,
-        "max": 10,
-        "step": 1,
-    }
+    assert "route_knowledge" not in schema
     assert "global_config" not in schema
     assert "pipeline" not in schema
     assert "translation" not in schema
@@ -187,6 +140,17 @@ def test_conf_schema_is_scoped_to_startup_credentials_and_sender_strategies():
     assert enabled_platforms["default"] == sender_strategy_options
     assert enabled_platforms["options"] == sender_strategy_options
     assert enabled_platforms["items"]["type"] == "string"
+    # Folo Markdown 渠道勾选：默认仅 Telegram，选项覆盖全部支持平台
+    markdown_platforms = sender_strategies["items"]["markdown_platforms"]
+    assert markdown_platforms["type"] == "list"
+    assert markdown_platforms["default"] == ["telegram"]
+    assert markdown_platforms["options"] == [
+        "telegram",
+        "aiocqhttp",
+        "qq_official",
+        "weixin_oc",
+    ]
+    assert markdown_platforms["items"]["type"] == "string"
 
 
 def test_conf_schema_exposes_single_platform_strategy_template_list():

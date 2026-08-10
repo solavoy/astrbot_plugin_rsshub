@@ -41,7 +41,6 @@ def _handler(
     get_user_settings_cmd=None,
     set_user_settings_cmd=None,
     test_sub_cmd=None,
-    route_knowledge_service=None,
     push_history_repo=None,
     notification_dispatcher=None,
     sub_repo=None,
@@ -66,7 +65,6 @@ def _handler(
         user_repo=user_repo or MagicMock(),
         push_history_repo=push_history_repo or MagicMock(),
         notification_dispatcher=notification_dispatcher,
-        route_knowledge_service=route_knowledge_service,
         config=config or MagicMock(),
         raw_config=raw_config,
     )
@@ -479,7 +477,6 @@ async def test_push_history_endpoint_filters_by_user_session_and_status():
         sub_repo=MagicMock(),
         user_repo=MagicMock(),
         push_history_repo=push_history_repo,
-        route_knowledge_service=None,
         config=MagicMock(),
         raw_config=None,
     )
@@ -566,7 +563,6 @@ async def test_push_history_endpoint_keeps_empty_fail_reason_empty_for_success()
         sub_repo=MagicMock(),
         user_repo=MagicMock(),
         push_history_repo=push_history_repo,
-        route_knowledge_service=None,
         config=MagicMock(),
         raw_config=None,
     )
@@ -606,7 +602,6 @@ async def test_delete_push_history_endpoint_supports_batch_delete():
         sub_repo=MagicMock(),
         user_repo=MagicMock(),
         push_history_repo=push_history_repo,
-        route_knowledge_service=None,
         config=MagicMock(),
         raw_config=None,
     )
@@ -801,7 +796,6 @@ async def test_user_details_endpoint_supports_keyword_filtering():
         sub_repo=sub_repo,
         user_repo=user_repo,
         push_history_repo=MagicMock(),
-        route_knowledge_service=None,
         config=MagicMock(),
         raw_config=None,
     )
@@ -1158,7 +1152,6 @@ async def test_feeds_endpoint_supports_keyword_filtering():
         sub_repo=sub_repo,
         user_repo=MagicMock(),
         push_history_repo=MagicMock(),
-        route_knowledge_service=None,
         config=MagicMock(),
         raw_config=None,
     )
@@ -1658,7 +1651,6 @@ async def test_delete_user_endpoint_supports_batch_delete():
         sub_repo=sub_repo,
         user_repo=user_repo,
         push_history_repo=push_history_repo,
-        route_knowledge_service=None,
         config=MagicMock(),
         raw_config=None,
     )
@@ -1963,7 +1955,6 @@ async def test_list_subscriptions_returns_handlers_mode():
         sub_repo=sub_repo,
         user_repo=MagicMock(),
         push_history_repo=MagicMock(),
-        route_knowledge_service=None,
         config=MagicMock(),
         raw_config=None,
     )
@@ -2338,99 +2329,10 @@ async def test_export_passes_real_user_id():
     command.execute.assert_awaited_once_with(user_id="alice")
 
 
-@pytest.mark.asyncio
-async def test_route_kb_status_endpoint_returns_service_status():
-    service = MagicMock()
-    service.get_status = AsyncMock(
-        return_value=SimpleNamespace(
-            kb_name="RSSHub Routes",
-            kb_id="kb-1",
-            source_version="v1",
-            source_generated_at="",
-            last_sync_at="2026-05-19T00:00:00Z",
-            managed_files=3,
-            kb_docs=3,
-            last_error="",
-            task=SimpleNamespace(status="idle", task_id="", processed=0, total=0),
-        )
-    )
-    handler = _handler(
-        polling_service=MagicMock(),
-        route_knowledge_service=service,
-    )
-
-    app = Quart(__name__)
-    async with app.test_request_context(
-        "/astrbot_plugin_rsshub/route-kb/status",
-        method="GET",
-    ):
-        response = await handler.handle_route_kb_status()
-
-    payload = await response.get_json()
-    assert payload["ok"] is True
-    assert payload["status"]["kb_name"] == "RSSHub Routes"
-    assert payload["status"]["task"]["status"] == "idle"
-    service.get_status.assert_awaited_once()
 
 
-@pytest.mark.asyncio
-async def test_route_kb_sync_endpoint_starts_service_task():
-    service = MagicMock()
-    service.start_sync = AsyncMock(
-        return_value=SimpleNamespace(
-            task_id="task-1",
-            status="queued",
-            kb_name="RSSHub Routes",
-            processed=0,
-            total=0,
-        )
-    )
-    handler = _handler(
-        polling_service=MagicMock(),
-        route_knowledge_service=service,
-    )
-
-    app = Quart(__name__)
-    async with app.test_request_context(
-        "/astrbot_plugin_rsshub/route-kb/sync",
-        method="POST",
-        json={},
-    ):
-        response = await handler.handle_route_kb_sync()
-
-    payload = await response.get_json()
-    assert payload["ok"] is True
-    assert payload["task"]["task_id"] == "task-1"
-    assert payload["task"]["status"] == "queued"
-    service.start_sync.assert_awaited_once()
 
 
-@pytest.mark.asyncio
-async def test_route_kb_task_endpoint_returns_latest_task():
-    service = MagicMock()
-    service.get_task_status.return_value = SimpleNamespace(
-        task_id="task-1",
-        status="running",
-        processed=2,
-        total=5,
-    )
-    handler = _handler(
-        polling_service=MagicMock(),
-        route_knowledge_service=service,
-    )
-
-    app = Quart(__name__)
-    async with app.test_request_context(
-        "/astrbot_plugin_rsshub/route-kb/task",
-        method="GET",
-    ):
-        response = await handler.handle_route_kb_task()
-
-    payload = await response.get_json()
-    assert payload["ok"] is True
-    assert payload["task"]["status"] == "running"
-    assert payload["task"]["processed"] == 2
-    service.get_task_status.assert_called_once()
 
 
 def _write_file(path: Path, content: str | bytes) -> None:

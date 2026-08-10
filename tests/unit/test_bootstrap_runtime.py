@@ -233,8 +233,6 @@ async def test_create_runtime_configures_message_senders_with_current_app_settin
             cache_ttl_seconds=120,
         ),
     )
-    route_knowledge_service = MagicMock()
-    route_knowledge_service.close = AsyncMock()
     cache_config: dict[str, int | bool] = {}
     table_cache_config: dict[str, int | bool] = {}
 
@@ -265,7 +263,7 @@ async def test_create_runtime_configures_message_senders_with_current_app_settin
         "_build_dependencies",
         AsyncMock(
             return_value=(
-                {"route_knowledge_service": route_knowledge_service},
+                {},
                 MagicMock(),
             )
         ),

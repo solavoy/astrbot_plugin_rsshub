@@ -62,6 +62,15 @@ class TelegramMessageSender(DefaultMessageSender):
         return max(1, int(getattr(cls, "_timeout_seconds", 60)))
 
     @staticmethod
+    def _context_render_markdown(context: MessageContext | None) -> bool | None:
+        """内容是否为 Folo 风格 Markdown（Telegram adapter 按 MarkdownV2 渲染）。
+
+        返回 ``None`` 时不改动 MessageChain 的 markdown 标记（保持默认纯文本）。
+        """
+        render = bool(getattr(context, "render_markdown", False)) if context else False
+        return True if render else None
+
+    @staticmethod
     def _normalize_planned_media(prepared_media):
         if not prepared_media:
             return prepared_media
@@ -221,6 +230,7 @@ class TelegramMessageSender(DefaultMessageSender):
                 failed_urls=[],
                 platform="telegram",
             ),
+            use_markdown=self._context_render_markdown(context),
         )
 
     @staticmethod
@@ -303,12 +313,14 @@ class TelegramMessageSender(DefaultMessageSender):
             if not chain:
                 return SendResult(ok=False, detail="empty_message")
 
-            result = await self._send_chain(session_id, chain)
+            use_markdown = self._context_render_markdown(context)
+            result = await self._send_chain(session_id, chain, use_markdown=use_markdown)
             if result.ok:
                 return result
             return await self._retry_text_with_generated_fallbacks(
                 request,
                 result,
+                use_markdown=use_markdown,
             )
 
         except Exception as err:

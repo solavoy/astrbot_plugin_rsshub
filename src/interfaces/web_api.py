@@ -38,9 +38,6 @@ from ..application.commands.update_subscription_cmd import UpdateSubscriptionCom
 from ..application.queries.get_feed_items_query import GetFeedItemsQuery
 from ..application.services.feed_polling_service import FeedPollingService
 from ..application.services.notification_dispatcher import NotificationDispatcher
-from ..application.services.route_knowledge_service import (
-    RouteKnowledgeSyncService,
-)
 from ..domain.entities.handlers import list_handler_registry
 from ..domain.repositories.feed_repository import FeedRepository
 from ..domain.repositories.push_history_repository import PushHistoryRepository
@@ -100,7 +97,6 @@ class WebApiHandler:
         user_repo: UserRepository,
         push_history_repo: PushHistoryRepository,
         notification_dispatcher: NotificationDispatcher | None = None,
-        route_knowledge_service: RouteKnowledgeSyncService | None = None,
         config: RsshubPluginConfig | None = None,
         raw_config: AstrBotConfig | None = None,
     ):
@@ -125,7 +121,6 @@ class WebApiHandler:
         self._user_repo = user_repo
         self._push_history_repo = push_history_repo
         self._notification_dispatcher = notification_dispatcher
-        self._route_knowledge_service = route_knowledge_service
         self._config = config
         self._raw_config = raw_config
 
@@ -230,9 +225,6 @@ class WebApiHandler:
                 self.handle_clear_exports,
                 "清空导出文件",
             ),
-            ("GET", "/route-kb/status", self.handle_route_kb_status, "Routes KB 状态"),
-            ("POST", "/route-kb/sync", self.handle_route_kb_sync, "同步 Routes KB"),
-            ("GET", "/route-kb/task", self.handle_route_kb_task, "Routes KB 任务"),
             (
                 "POST",
                 "/push-history/delete",
@@ -321,34 +313,6 @@ class WebApiHandler:
     async def handle_updates(self):
         """轻量更新检查（无认证限制，通过 bridge apiGet 代理调用）"""
         return jsonify({"ok": True, "changed": False, "counter": self._change_counter})
-
-    # ─── RSSHub Routes KB ────────────────────────────────────
-
-    async def handle_route_kb_status(self):
-        """获取 RSSHub Routes 知识库同步状态。"""
-        if self._route_knowledge_service is None:
-            return jsonify({"ok": False, "error": "Routes KB 服务未初始化"})
-        status = await self._route_knowledge_service.get_status()
-        return jsonify({"ok": True, "status": _dump_dataclass_like(status)})
-
-    async def handle_route_kb_sync(self):
-        """启动 RSSHub Routes 知识库同步。"""
-        if self._route_knowledge_service is None:
-            return jsonify({"ok": False, "error": "Routes KB 服务未初始化"})
-        try:
-            task = await self._route_knowledge_service.start_sync()
-        except Exception as exc:
-            return jsonify({"ok": False, "error": str(exc)})
-        self._bump_counter()
-        asyncio.create_task(self._broadcast({"event": "route_kb_sync_started"}))
-        return jsonify({"ok": True, "task": _dump_dataclass_like(task)})
-
-    async def handle_route_kb_task(self):
-        """获取最近 RSSHub Routes 知识库同步任务。"""
-        if self._route_knowledge_service is None:
-            return jsonify({"ok": False, "error": "Routes KB 服务未初始化"})
-        task = self._route_knowledge_service.get_task_status()
-        return jsonify({"ok": True, "task": _dump_dataclass_like(task)})
 
     # ─── 订阅列表 ─────────────────────────────────────────────
 

@@ -91,8 +91,11 @@ async def test_agent_xml_push_service_dry_run_returns_preview():
     assert result["dry_run"] is True
     preview = result["preview"]
     assert preview["entry_guid"].startswith("agent:")
+    # telegram 平台输出 Folo 风格 Markdown（标题加粗 + 可点击 via 链接）
+    assert "**Hello**" in preview["content"]
     assert (
-        "via https://example.com/post | Feed Name (author: Alice)" in preview["content"]
+        "via [https://example\\.com/post](https://example\\.com/post) | "
+        "Feed Name (author: Alice)" in preview["content"]
     )
     assert preview["media_urls"] == ["https://example.com/a.png"]
     dispatcher.dispatch_agent_entry.assert_not_awaited()
@@ -322,7 +325,8 @@ async def test_agent_xml_push_service_omits_broken_via_suffix_when_tail_fields_m
 
     assert result["ok"] is True
     preview = result["preview"]
-    assert preview["content"] == "Hello"
+    # telegram 平台标题加粗；尾部字段缺失时仍省略 via 后缀
+    assert preview["content"] == "**Hello**"
     assert "via" not in preview["content"]
     assert "|" not in preview["content"]
 

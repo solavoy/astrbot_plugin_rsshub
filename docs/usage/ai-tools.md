@@ -16,7 +16,7 @@
 - `rss_list_push_history`: 查询当前会话推送历史，用于排查 `status`、`fail_reason`、`handler_trace`、`raw_xml` 和媒体。
 - `rss_push_xml_entry`: 一次性解析 XML/HTML 标签内容并推送到当前会话。
 
-RSSHub 路由检索后续走 AstrBot 知识库和 route skill；插件不再提供 route 搜索 LLM tool。
+RSSHub 路由检索后续走 route skill；插件不再提供 route 搜索 LLM tool。
 
 ## Agent 推荐顺序
 

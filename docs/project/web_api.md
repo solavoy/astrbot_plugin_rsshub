@@ -70,9 +70,6 @@ Dashboard 的 ID/URL 筛选 UI 使用紧凑筛选栏：关键词框绑定 `keywo
 | 导出文件下载 | `GET /data-management/exports/download` | 文件标识 | 返回可下载文件响应。 | 仅限插件导出目录。 |
 | 导出文件删除 | `POST /data-management/exports/delete` | 文件标识 | 删除单个导出文件。 | 只管理插件导出目录。 |
 | 导出文件清空 | `POST /data-management/exports/clear` | 无 | 清空导出目录。 | 不影响 cache 和数据库。 |
-| Routes KB 状态 | `GET /route-kb/status` | 无 | 返回 KB 同步状态。 | 只是暴露 `RouteKnowledgeSyncService` 状态。 |
-| Routes KB 同步 | `POST /route-kb/sync` | 同步参数 | 启动同步任务。 | 同一时间只允许一个同步任务。 |
-| Routes KB 任务 | `GET /route-kb/task` | task id / 当前任务 | 返回同步任务进度和错误信息。 | 用于 Dashboard 轮询展示。 |
 | 插件设置读取 | `GET /plugin-settings` | 无 | 读取启动级和默认订阅级配置。 | 不承担订阅创建、导入、导出。 |
 | 插件设置保存 | `POST /plugin-settings` | 设置 payload | 保存允许编辑的插件设置。 | 推送历史自动清理范围不通过这里保存。 |
 

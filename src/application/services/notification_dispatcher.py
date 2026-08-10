@@ -29,6 +29,7 @@ from ...infrastructure.config import BasicSettings, SubscriptionDefaults
 from ...infrastructure.pipeline import (
     EffectivePushOptions,
     EntryFormatInput,
+    EntryOutputFormat,
     EntryTextFormatter,
     MessageFormatter,
 )
@@ -679,6 +680,7 @@ class NotificationDispatcher:
                         feed_title=feed_title,
                         feed_link=feed_link,
                         options=effective_options,
+                        platform=str(sub.platform_name or "").strip(),
                     )
                     if not effective_options.notify:
                         await self._save_skipped_history(
@@ -1211,6 +1213,12 @@ class NotificationDispatcher:
                         send_mode=self._normalize_send_mode_value(send_mode),
                         style=style,
                         sender_strategy=sender_strategy,
+                        render_markdown=(
+                            EntryTextFormatter.resolve_output_format(
+                                target.platform_name
+                            )
+                            is EntryOutputFormat.MARKDOWN
+                        ),
                     ),
                 )
 
@@ -1309,6 +1317,7 @@ class NotificationDispatcher:
         feed_title: str,
         feed_link: str,
         options: EffectivePushOptions,
+        platform: str = "",
     ) -> str:
         if raw_entry is None:
             cleaned = await _entry_text_formatter.clean_text(fallback_content)
@@ -1330,6 +1339,7 @@ class NotificationDispatcher:
                 tags=tuple(getattr(raw_entry, "tags", ()) or ()),
             ),
             options,
+            output_format=EntryTextFormatter.resolve_output_format(platform),
         )
 
     async def dispatch_pending_retries(self, limit: int = 100) -> dict[str, int]:

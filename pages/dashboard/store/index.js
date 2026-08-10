@@ -10,7 +10,6 @@ import { subscriptionsModule } from './modules/subscriptions.js';
 import { usersModule } from './modules/users.js';
 import { feedsModule } from './modules/feeds.js';
 import { pushHistoryModule } from './modules/push-history.js';
-import { routeKbModule } from './modules/route-kb.js';
 import { settingsModule } from './modules/settings.js';
 import { dataManagementModule } from './modules/data-management.js';
 import { handlersModule } from './modules/handlers.js';
@@ -29,7 +28,6 @@ export function createDashboardStore(PetiteVue) {
     ...usersModule,
     ...feedsModule,
     ...pushHistoryModule,
-    ...routeKbModule,
     ...settingsModule,
     ...dataManagementModule,
     ...handlersModule,

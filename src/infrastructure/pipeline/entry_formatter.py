@@ -7,6 +7,10 @@ from dataclasses import dataclass, field
 from enum import Enum
 
 from ...application.services.html_parser import HTMLParser
+from ...shared.constants import (
+    PLATFORM_ALIASES,
+    SENDER_MARKDOWN_PLATFORM_DEFAULT,
+)
 from ..rendering import cleanup_ephemeral_generated_media_paths
 from ..utils import get_logger
 
@@ -18,6 +22,14 @@ class EntryOutputFormat(str, Enum):
 
     PLAIN = "plain"
     MARKDOWN = "markdown"
+
+
+# 平台别名 → 规范名，用于把订阅的 platform_name 归一化后匹配配置的勾选渠道。
+_PLATFORM_ALIAS_TO_CANONICAL: dict[str, str] = {
+    alias: canonical
+    for canonical, aliases in PLATFORM_ALIASES.items()
+    for alias in aliases
+}
 
 
 @dataclass(frozen=True)
@@ -54,10 +66,24 @@ class EntryTextFormatter:
     # 表格转图总开关（media.table_to_image）；关闭后表格统一回退纯文本。
     _table_to_image_enabled: bool = True
 
+    # 使用 Folo 风格 Markdown 的渠道（规范平台名），由 sender_strategies
+    # 的 markdown_platforms 勾选配置驱动；默认仅 Telegram。
+    _markdown_platforms: frozenset[str] = frozenset(SENDER_MARKDOWN_PLATFORM_DEFAULT)
+
     @classmethod
     def configure_table_to_image(cls, enabled: bool) -> None:
         """配置表格转图总开关（启动装配时调用）。"""
         cls._table_to_image_enabled = bool(enabled)
+
+    @classmethod
+    def configure_markdown_platforms(cls, platforms: list[str] | tuple[str, ...]) -> None:
+        """配置使用 Folo 风格 Markdown 的消息渠道（启动装配时调用）。
+
+        传入勾选的规范平台名列表；空列表表示任何渠道都不使用 Markdown。
+        """
+        cls._markdown_platforms = frozenset(
+            str(name).strip().lower() for name in platforms or []
+        )
 
     async def format_entry(
         self,
@@ -127,6 +153,20 @@ class EntryTextFormatter:
         if via_suffix:
             return f"{content}\n\n{via_suffix}" if content else via_suffix
         return content
+
+    @classmethod
+    def resolve_output_format(cls, platform: str | None) -> EntryOutputFormat:
+        """按平台解析最终输出格式（由 markdown_platforms 勾选配置驱动）。
+
+        命中勾选渠道（含别名，如 tg→telegram、onebot→aiocqhttp）输出 Folo
+        风格 Markdown，其余平台保持纯文本，避免 ``**标题**``、``[链接](url)``
+        等 Markdown 原文直接暴露给用户。
+        """
+        normalized = str(platform or "").strip().lower()
+        canonical = _PLATFORM_ALIAS_TO_CANONICAL.get(normalized, normalized)
+        if canonical in cls._markdown_platforms:
+            return EntryOutputFormat.MARKDOWN
+        return EntryOutputFormat.PLAIN
 
     @staticmethod
     async def clean_text(value: str, *, render_tables_as_images: bool = True) -> str:
@@ -227,7 +267,7 @@ class EntryTextFormatter:
             options=options,
         )
         if via_suffix:
-            return f"{content}\n\n{via_suffix}" if content else via_suffix
+            return f"{content}\n\n---\n\n{via_suffix}" if content else via_suffix
         return content
 
     @classmethod
@@ -268,13 +308,30 @@ class EntryTextFormatter:
 
         return " ".join(parts)
 
+    # MarkdownV2 全部特殊字符（超集覆盖 classic Markdown）。Telegram adapter
+    # 按 MarkdownV2 渲染 Plain 文本（docs/project/sender.md），未转义这些字符
+    # 会导致解析 400（如 via 链接文本里的 ``.`` ``-``）。classic Markdown 下
+    # 对任意字符 ``\x`` 也按字面输出，因此两套 parse mode 都安全。
+    # ``-`` 放在末尾避免在字符类里被当作范围运算符。
+    _MARKDOWNV2_SPECIAL: str = r"\\`*_{}\[\]()#+.!|=<>~-"
+
     @staticmethod
     def _escape_markdown_text(value: str) -> str:
-        return re.sub(r"([\\`*_{}\[\]])", r"\\\1", value or "")
+        return re.sub(
+            r"([" + EntryTextFormatter._MARKDOWNV2_SPECIAL + r"])",
+            r"\\\1",
+            value or "",
+        )
 
     @staticmethod
     def _escape_markdown_url(value: str) -> str:
-        return (value or "").replace("\\", "\\\\").replace(")", "%29")
+        url = (value or "").replace("\\", "\\\\")
+        # MarkdownV2 中链接 URL 需要转义 ``)`` 与 ``.`` ``_`` 等特殊字符。
+        return re.sub(
+            r"([" + EntryTextFormatter._MARKDOWNV2_SPECIAL + r"])",
+            r"\\\1",
+            url,
+        )
 
 
 def normalize_plain_text(value: str) -> str:

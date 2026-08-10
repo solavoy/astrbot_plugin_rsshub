@@ -160,7 +160,6 @@
 .btn-action.danger { color: #ef4444 !important; }
 .panel-section { margin-bottom: 20px; }
 .panel-section h4 { font-size: 14px; color: #64748b; margin-bottom: 12px; margin-top: 4px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
-.route-kb-title { display: flex; align-items: center; min-width: 0; }
 .setting-row { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 14px 0; border-bottom: 1px solid #f1f5f9; }
 .setting-row:last-child { border-bottom: none; }
 .setting-label { flex: 0 0 auto; font-size: 14px; color: #374151; }

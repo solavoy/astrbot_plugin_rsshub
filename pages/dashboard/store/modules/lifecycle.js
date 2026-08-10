@@ -10,7 +10,6 @@ export const lifecycleModule = {
       users: () => this.loadUsers(),
       feeds: () => this.loadFeeds(),
       'push-history': () => this.loadPushHistory(),
-      'route-kb': () => this.loadRouteKbStatus(),
       handlers: () => this.loadHandlers(),
       settings: () => this.loadSettings(),
       'data-management': () => this.loadDataManagement(),

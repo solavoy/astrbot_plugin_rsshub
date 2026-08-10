@@ -409,6 +409,133 @@ async def test_dispatch_sends_via_injected_sender_provider():
 
 
 @pytest.mark.asyncio
+async def test_dispatch_formats_folo_markdown_only_for_telegram():
+    """自动按平台：Telegram 输出 Folo 风格 Markdown，OneBot 保持纯文本。"""
+    sender = FakeSender()
+    subscriptions = [
+        Subscription(
+            id=1,
+            user_id="user-1",
+            feed_id=10,
+            platform_name="telegram",
+            target_session="telegram:Group:1",
+        ),
+        Subscription(
+            id=2,
+            user_id="user-2",
+            feed_id=10,
+            platform_name="onebot",
+            target_session="onebot:user-2",
+        ),
+    ]
+    sub_repo = AsyncMock()
+    sub_repo.get_active_by_feed_id.return_value = subscriptions
+    history_repo = AsyncMock()
+    history_repo.exists_success_by_scope_and_guid.return_value = False
+    history_repo.save.side_effect = lambda history: history
+    user_repo = AsyncMock()
+    user_repo.get_or_create.side_effect = lambda user_id: User(id=user_id)
+
+    dispatcher = NotificationDispatcher(
+        subscription_repo=sub_repo,
+        push_history_repo=history_repo,
+        sender_provider=FakeSenderProvider(sender),
+        user_repo=user_repo,
+    )
+
+    await dispatcher.dispatch_to_feed_subscribers(
+        feed_id=10,
+        content="fallback content",
+        entry_title="title",
+        entry_link="https://example.com/entry",
+        entry_guid="guid-1",
+        raw_entry=EntryContentContext(
+            title="title",
+            summary="content",
+            content="content",
+            link="https://example.com/entry",
+            author="author",
+            feed_title="feed",
+            feed_link="https://example.com/feed.xml",
+        ),
+    )
+
+    assert len(sender.requests) == 2, f"got {len(sender.requests)}: {sender.requests}"
+    requests: dict[str, tuple] = {}
+    for req, ctx in sender.requests:
+        requests[req.session_id] = (req, ctx)
+
+    # Telegram：Folo 风格 Markdown + 渲染标记
+    tg_req, tg_ctx = requests["telegram:Group:1"]
+    assert "**title**" in tg_req.message
+    assert "\n\n---\n\n" in tg_req.message
+    assert "via [https://example\\.com/entry](https://example\\.com/entry)" in (
+        tg_req.message
+    )
+    assert tg_ctx.render_markdown is True
+
+    # OneBot：纯文本，无 Markdown 原文泄漏
+    ob_req, ob_ctx = requests["onebot:user-2"]
+    assert ob_req.message.startswith("title")
+    assert "via https://example.com/entry | feed" in ob_req.message
+    assert "**" not in ob_req.message
+    assert ob_ctx.render_markdown is False
+
+
+@pytest.mark.asyncio
+async def test_dispatch_uses_configured_markdown_platforms():
+    """勾选 aiocqhttp 后 OneBot 也输出 Folo Markdown 并带渲染标记。"""
+    from astrbot_plugin_rsshub.src.infrastructure.pipeline import EntryTextFormatter
+
+    sender = FakeSender()
+    sub = Subscription(
+        id=1,
+        user_id="user-1",
+        feed_id=10,
+        platform_name="aiocqhttp",
+        target_session="onebot:user-1",
+    )
+    sub_repo = AsyncMock()
+    sub_repo.get_active_by_feed_id.return_value = [sub]
+    history_repo = AsyncMock()
+    history_repo.exists_success_by_scope_and_guid.return_value = False
+    history_repo.save.side_effect = lambda history: history
+
+    dispatcher = NotificationDispatcher(
+        subscription_repo=sub_repo,
+        push_history_repo=history_repo,
+        sender_provider=FakeSenderProvider(sender),
+    )
+
+    EntryTextFormatter.configure_markdown_platforms(["telegram", "aiocqhttp"])
+    try:
+        await dispatcher.dispatch_to_feed_subscribers(
+            feed_id=10,
+            content="fallback content",
+            entry_title="title",
+            entry_link="https://example.com/entry",
+            entry_guid="guid-1",
+            raw_entry=EntryContentContext(
+                title="title",
+                summary="content",
+                content="content",
+                link="https://example.com/entry",
+                author="author",
+                feed_title="feed",
+                feed_link="https://example.com/feed.xml",
+            ),
+        )
+    finally:
+        EntryTextFormatter.configure_markdown_platforms(["telegram"])
+
+    assert len(sender.requests) == 1
+    req, ctx = sender.requests[0]
+    assert "**title**" in req.message
+    assert "via [https://example\\.com/entry]" in req.message
+    assert ctx.render_markdown is True
+
+
+@pytest.mark.asyncio
 async def test_dispatch_cleans_raw_generated_layout_temp_after_fanout(tmp_path: Path):
     sender = FakeSender()
     subscriptions = [
@@ -1068,8 +1195,9 @@ async def test_dispatch_with_raw_entry_keeps_cleaned_content_when_not_processed(
         id=1,
         user_id="user-1",
         feed_id=10,
-        platform_name="telegram",
-        target_session="telegram:Group:1",
+        # 非 telegram 平台，避免 Folo Markdown 干扰"内容清洗"断言
+        platform_name="onebot",
+        target_session="onebot:user-1",
     )
     sub_repo = AsyncMock()
     sub_repo.get_active_by_feed_id.return_value = [sub]
@@ -1135,8 +1263,9 @@ async def test_dispatch_formats_raw_entry_with_effective_options_from_subscripti
         id=1,
         user_id="user-1",
         feed_id=10,
-        platform_name="telegram",
-        target_session="telegram:Group:1",
+        # 非 telegram 平台，避免 Folo Markdown 干扰"生效选项"断言
+        platform_name="onebot",
+        target_session="onebot:user-1",
         length_limit=4,
         display_title=-1,
         display_author=-1,

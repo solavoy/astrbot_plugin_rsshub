@@ -356,9 +356,66 @@ async def test_entry_text_formatter_can_render_lightweight_markdown():
 
     assert text.startswith("**Title \\*with\\* brackets \\[x\\]**")
     assert "Body with \\*\\*literal\\*\\* markdown" in text
-    assert "#tag-one #tag\\_two" in text
-    assert "via [https://example.com/post](https://example.com/post) | Feed" in text
+    # MarkdownV2 全集合转义（`#` `-` 等也需转义，避免 Telegram 解析失败）
+    assert "\\#tag\\-one \\#tag\\_two" in text
+    # Folo 风格归属分隔线
+    assert "\n\n---\n\n" in text
+    assert (
+        "via [https://example\\.com/post](https://example\\.com/post) | Feed"
+        in text
+    )
     assert "(author: Author\\_Name)" in text
+
+
+def test_resolve_output_format_is_platform_aware():
+    # 默认仅 Telegram（含短名 tg）输出 Markdown，其余平台保持纯文本
+    assert EntryTextFormatter.resolve_output_format("telegram") is (
+        EntryOutputFormat.MARKDOWN
+    )
+    assert EntryTextFormatter.resolve_output_format("tg") is EntryOutputFormat.MARKDOWN
+    assert EntryTextFormatter.resolve_output_format("Telegram") is (
+        EntryOutputFormat.MARKDOWN
+    )
+    for platform in ("onebot", "aiocqhttp", "qq_official", "weixin_oc", "", None):
+        assert EntryTextFormatter.resolve_output_format(platform) is (
+            EntryOutputFormat.PLAIN
+        )
+
+
+def test_resolve_output_format_follows_configured_markdown_platforms():
+    # 勾选 telegram + aiocqhttp 后，OneBot（含别名 onebot）也输出 Markdown
+    EntryTextFormatter.configure_markdown_platforms(["telegram", "aiocqhttp"])
+    try:
+        assert EntryTextFormatter.resolve_output_format("telegram") is (
+            EntryOutputFormat.MARKDOWN
+        )
+        assert EntryTextFormatter.resolve_output_format("onebot") is (
+            EntryOutputFormat.MARKDOWN
+        )
+        assert EntryTextFormatter.resolve_output_format("aiocqhttp") is (
+            EntryOutputFormat.MARKDOWN
+        )
+        assert EntryTextFormatter.resolve_output_format("qq_official") is (
+            EntryOutputFormat.PLAIN
+        )
+        assert EntryTextFormatter.resolve_output_format("weixin_oc") is (
+            EntryOutputFormat.PLAIN
+        )
+    finally:
+        EntryTextFormatter.configure_markdown_platforms(["telegram"])
+
+
+def test_resolve_output_format_empty_config_disables_markdown_everywhere():
+    EntryTextFormatter.configure_markdown_platforms([])
+    try:
+        assert EntryTextFormatter.resolve_output_format("telegram") is (
+            EntryOutputFormat.PLAIN
+        )
+        assert EntryTextFormatter.resolve_output_format("tg") is (
+            EntryOutputFormat.PLAIN
+        )
+    finally:
+        EntryTextFormatter.configure_markdown_platforms(["telegram"])
 
 
 @pytest.mark.asyncio

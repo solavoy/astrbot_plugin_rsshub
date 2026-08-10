@@ -38,7 +38,6 @@
 - [`project/platforms.md`](./project/platforms.md): 平台发送差异、媒体预下载、代理、缓存与常量放置规则
 - [`project/handlers.md`](./project/handlers.md): handler registry、继承、执行顺序、AI filter/transform 与 trace
 - [`project/formatting.md`](./project/formatting.md): `EntryTextFormatter`、`MessageComponentSorter` 与平台兼容顺序
-- [`project/knowledge.md`](./project/knowledge.md): RSSHub Routes 知识库同步、manifest diff、任务状态与 source adapter
 - [`project/roadmap.md`](./project/roadmap.md): 当前状态与后续演进方向
 
 ### dev
@@ -53,7 +52,7 @@
 
 - [`usage/README.md`](./usage/README.md): 使用文档索引
 - [`usage/commands.md`](./usage/commands.md): 聊天命令、配置继承、帮助和测试推送
-- [`usage/configuration.md`](./usage/configuration.md): 启动级配置、媒体配置、发送策略和 Routes 知识库配置
+- [`usage/configuration.md`](./usage/configuration.md): 启动级配置、媒体配置和发送策略
 - [`usage/plugin-pages.md`](./usage/plugin-pages.md): Plugin Pages 管理界面功能边界和操作说明
 - [`usage/ai-tools.md`](./usage/ai-tools.md): LLM tools 能力和使用边界
 - [`usage/compatibility.md`](./usage/compatibility.md): RSS 解析、媒体发送、平台差异和升级兼容

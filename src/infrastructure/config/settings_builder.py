@@ -5,9 +5,12 @@ from __future__ import annotations
 from typing import Any
 
 from ...shared.constants import (
+    GIF_TRANSCODE_PROFILE_COMPATIBILITY,
+    GIF_TRANSCODE_PROFILE_OPTIONS,
     MEDIA_CACHE_TTL_SECONDS_DEFAULT,
     MEDIA_CACHE_TTL_SECONDS_MIN,
     ONEBOT_NAPCAT_STREAM_MODE_DEFAULT,
+    PLATFORM_ALIASES,
     PLATFORM_ONEBOT,
     PLATFORM_QQ_OFFICIAL,
     PLATFORM_STRATEGY_TEMPLATE_KEYS,
@@ -16,10 +19,10 @@ from ...shared.constants import (
     QQ_OFFICIAL_MARKDOWN_MODE_DEFAULT,
     QQ_OFFICIAL_MARKDOWN_MODE_OPTIONS,
     QQ_OFFICIAL_MEDIA_THRESHOLD_DEFAULT,
+    SENDER_MARKDOWN_PLATFORM_DEFAULT,
+    SENDER_MARKDOWN_PLATFORM_OPTIONS,
     SENDER_STRATEGY_ENABLED_PLATFORMS,
     TELEGRAM_PHOTO_MAX_BYTES,
-    GIF_TRANSCODE_PROFILE_COMPATIBILITY,
-    GIF_TRANSCODE_PROFILE_OPTIONS,
 )
 from .models import (
     ApplicationSettings,
@@ -30,7 +33,6 @@ from .models import (
     MediaPlatformLimits,
     MediaSettings,
     PlatformStrategySettings,
-    RouteKnowledgeSettings,
     RSSSettings,
     SchedulerSettings,
     SenderStrategySettings,
@@ -66,15 +68,6 @@ def _as_tuple(value: Any) -> tuple[str, ...]:
     if isinstance(value, (list, tuple, set)):
         return tuple(str(item).strip() for item in value if str(item).strip())
     return ()
-
-
-def _normalize_route_knowledge_base_url(value: Any) -> str:
-    raw = str(value or "").strip()
-    if not raw:
-        return ""
-    old = "FlanChanXwO/astrbot_plugin_rsshub/rsshub-routes-knowledgebase"
-    new = "FlanChanXwO/rsshub-routes-knowledgebase/main"
-    return raw.replace(old, new)
 
 
 def _get_gif_transcode_profile(value: Any) -> str:
@@ -114,6 +107,13 @@ _SENDER_STRATEGY_KEYS: tuple[str, ...] = SENDER_STRATEGY_ENABLED_PLATFORMS
 
 _PLATFORM_STRATEGY_TEMPLATE_KEYS: dict[str, str] = PLATFORM_STRATEGY_TEMPLATE_KEYS
 
+# 平台别名 → 规范名，用于把配置里的别名（如 onebot）归一化到 aiocqhttp。
+_PLATFORM_ALIAS_TO_CANONICAL: dict[str, str] = {
+    alias: canonical
+    for canonical, aliases in PLATFORM_ALIASES.items()
+    for alias in aliases
+}
+
 
 def _enabled_sender_strategy_names(value: Any) -> set[str] | None:
     if value is None:
@@ -144,6 +144,30 @@ def _first_strategy_template(value: Any, template_key: str) -> Any:
         ),
         None,
     )
+
+
+def _build_markdown_platforms(value: Any) -> tuple[str, ...]:
+    """解析勾选的 Markdown 消息渠道（别名归一化到规范名、去重、保序）。
+
+    配置项缺失时返回默认（仅 Telegram）；显式配置为空列表表示任何渠道都不使用 Markdown。
+    """
+    raw = _get_value(value, "markdown_platforms", None)
+    if raw is None:
+        return SENDER_MARKDOWN_PLATFORM_DEFAULT
+    if isinstance(raw, str):
+        raw = [
+            part.strip()
+            for part in raw.replace(",", "\n").splitlines()
+            if part.strip()
+        ]
+    known = set(SENDER_MARKDOWN_PLATFORM_OPTIONS)
+    platforms: list[str] = []
+    for item in raw or []:
+        name = str(item).strip().lower()
+        canonical = _PLATFORM_ALIAS_TO_CANONICAL.get(name, name)
+        if canonical in known and canonical not in platforms:
+            platforms.append(canonical)
+    return tuple(platforms)
 
 
 def _build_sender_strategy_settings(value: Any) -> SenderStrategySettings:
@@ -210,10 +234,12 @@ def _build_sender_strategy_settings(value: Any) -> SenderStrategySettings:
         napcat_stream_mode=aiocqhttp_napcat_mode,
     )
     qq_official_config = PlatformStrategySettings(markdown_mode=markdown_mode)
+    markdown_platforms = _build_markdown_platforms(value)
     if enabled is not None:
         enabled = {item for item in enabled if item in _SENDER_STRATEGY_KEYS}
         return SenderStrategySettings(
             **{key: key in enabled for key in _SENDER_STRATEGY_KEYS},
+            markdown_platforms=markdown_platforms,
             telegram_settings=telegram_config,
             aiocqhttp_settings=aiocqhttp_config,
             qq_official_settings=qq_official_config,
@@ -222,6 +248,7 @@ def _build_sender_strategy_settings(value: Any) -> SenderStrategySettings:
         telegram=bool(_get_value(value, PLATFORM_TELEGRAM, True)),
         aiocqhttp=bool(_get_value(value, PLATFORM_ONEBOT, True)),
         qq_official=bool(_get_value(value, PLATFORM_QQ_OFFICIAL, True)),
+        markdown_platforms=markdown_platforms,
         telegram_settings=telegram_config,
         aiocqhttp_settings=aiocqhttp_config,
         qq_official_settings=qq_official_config,
@@ -261,7 +288,6 @@ def build_application_settings(config: Any) -> ApplicationSettings:
     media_cfg = _get_value(config, "media")
     content_handlers_cfg = _get_value(config, "content_handlers")
     sender_cfg = _get_value(config, "sender_strategies")
-    route_knowledge_cfg = _get_value(config, "route_knowledge")
 
     http = HttpSettings(
         proxy=_normalize_proxy_url(
@@ -448,56 +474,5 @@ def build_application_settings(config: Any) -> ApplicationSettings:
             ffmpeg_mirror_custom_url=str(
                 _get_value(media_cfg, "ffmpeg_mirror_custom_url", "") or ""
             ).strip(),
-        ),
-        route_knowledge=RouteKnowledgeSettings(
-            kb_name=str(
-                _get_value(route_knowledge_cfg, "kb_name", "RSSHub Routes")
-                or "RSSHub Routes"
-            ),
-            embedding_provider_id=str(
-                _get_value(route_knowledge_cfg, "embedding_provider_id", "") or ""
-            ),
-            rerank_provider_id=str(
-                _get_value(route_knowledge_cfg, "rerank_provider_id", "") or ""
-            ),
-            source_mode=str(
-                _get_value(route_knowledge_cfg, "source_mode", "speed_test")
-                or "speed_test"
-            ),
-            source_base_url=str(
-                _normalize_route_knowledge_base_url(
-                    _get_value(
-                        route_knowledge_cfg,
-                        "source_base_url",
-                        RouteKnowledgeSettings.source_base_url,
-                    )
-                    or RouteKnowledgeSettings.source_base_url
-                )
-            ),
-            fallback_base_url=str(
-                _normalize_route_knowledge_base_url(
-                    _get_value(
-                        route_knowledge_cfg,
-                        "fallback_base_url",
-                        RouteKnowledgeSettings.fallback_base_url,
-                    )
-                    or RouteKnowledgeSettings.fallback_base_url
-                )
-            ),
-            local_source_dir=str(
-                _get_value(route_knowledge_cfg, "local_source_dir", "") or ""
-            ),
-            timeout=max(
-                1, int(_get_value(route_knowledge_cfg, "timeout", basic.timeout) or 30)
-            ),
-            batch_size=max(
-                1, int(_get_value(route_knowledge_cfg, "batch_size", 32) or 32)
-            ),
-            tasks_limit=max(
-                1, int(_get_value(route_knowledge_cfg, "tasks_limit", 3) or 3)
-            ),
-            max_retries=max(
-                0, int(_get_value(route_knowledge_cfg, "max_retries", 3) or 3)
-            ),
         ),
     )

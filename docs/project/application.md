@@ -20,7 +20,6 @@
 | `/sub_status` | 展示当前会话运行中或排队中的推送任务。 | 不把全局队列无筛选暴露给普通用户。 |
 | `/sub_stop [job_id\|feed_id\|all]` | 支持精确停止和批量停止；无参数时停止当前运行任务。 | 不让停止语义绕过审计。 |
 | `/rsshelp` | 发送预生成帮助图；按 AstrBot `timezone` 选择日间/夜间主题，读不到或时区非法时回退系统本地时间。 | 不把帮助图生成放到运行时热路径。 |
-| `/rsshub_kb_init` / `/rsshub_kb_sync` / `/rsshub_kb_status` / `/rsshub_kb_task` | 管理 RSSHub Routes 知识库同步。 | 不恢复 route-search / route-build LLM tools。 |
 
 命令解析细节见 [`commands.md`](./commands.md)。
 

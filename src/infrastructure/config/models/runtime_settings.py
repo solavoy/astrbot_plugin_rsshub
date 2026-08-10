@@ -10,6 +10,7 @@ from ....shared.constants import (
     QQ_OFFICIAL_DEGRADE_STRATEGY_DEFAULT,
     QQ_OFFICIAL_MARKDOWN_MODE_DEFAULT,
     QQ_OFFICIAL_MEDIA_THRESHOLD_DEFAULT,
+    SENDER_MARKDOWN_PLATFORM_DEFAULT,
     TELEGRAM_PHOTO_MAX_BYTES,
 )
 
@@ -112,6 +113,7 @@ class SenderStrategySettings:
     telegram: bool = True
     aiocqhttp: bool = True
     qq_official: bool = True
+    markdown_platforms: tuple[str, ...] = SENDER_MARKDOWN_PLATFORM_DEFAULT
     telegram_settings: PlatformStrategySettings = field(
         default_factory=PlatformStrategySettings
     )
@@ -158,27 +160,6 @@ class MediaSettings:
 
 
 @dataclass(frozen=True)
-class RouteKnowledgeSettings:
-    """RSSHub Routes knowledge-base sync settings."""
-
-    kb_name: str = "RSSHub Routes"
-    embedding_provider_id: str = ""
-    rerank_provider_id: str = ""
-    source_mode: str = "speed_test"
-    source_base_url: str = (
-        "https://raw.githubusercontent.com/FlanChanXwO/rsshub-routes-knowledgebase/main"
-    )
-    fallback_base_url: str = (
-        "https://raw.githubusercontent.com/FlanChanXwO/rsshub-routes-knowledgebase/main"
-    )
-    local_source_dir: str = ""
-    timeout: int = 30
-    batch_size: int = 32
-    tasks_limit: int = 3
-    max_retries: int = 3
-
-
-@dataclass(frozen=True)
 class ApplicationSettings:
     """Settings consumed by the application layer."""
 
@@ -201,7 +182,4 @@ class ApplicationSettings:
     http: HttpSettings = field(default_factory=HttpSettings)
     media_platform_limits: MediaPlatformLimits = field(
         default_factory=MediaPlatformLimits
-    )
-    route_knowledge: RouteKnowledgeSettings = field(
-        default_factory=RouteKnowledgeSettings
     )

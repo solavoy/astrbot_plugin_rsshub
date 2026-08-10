@@ -123,6 +123,7 @@ class MessageContext:
     send_mode: int | None = None
     style: int = 0
     sender_strategy: Any = None
+    render_markdown: bool = False
     event: Any = None  # AstrBot event object for platform-specific features (e.g., NapCat stream)
 
 

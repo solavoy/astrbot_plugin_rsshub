@@ -17,7 +17,6 @@
 - [`sender.md`](./sender.md): NotificationService、sender adapter 与媒体 fingerprint
 - [`handlers.md`](./handlers.md): handler registry、继承、AI filter/transform 行为
 - [`formatting.md`](./formatting.md): 文本格式化、媒体组件排序与平台兼容策略
-- [`knowledge.md`](./knowledge.md): RSSHub Routes 知识库同步、manifest diff 与任务状态
 - [`roadmap.md`](./roadmap.md): 当前版本状态与后续演进方向
 
 ## 职责边界
@@ -26,7 +25,7 @@
 - `architecture.md` 解释“模块如何连接”，不复制各模块算法。
 - `domain-model.md` 维护跨模块稳定值和配置模型归属。
 - `application.md` 维护入口语义和应用层行为边界。
-- `polling.md`、`dispatch.md`、`handlers.md`、`formatting.md`、`sender.md`、`platforms.md`、`web_api.md`、`repositories.md`、`knowledge.md` 分别维护各自模块流程。
+- `polling.md`、`dispatch.md`、`handlers.md`、`formatting.md`、`sender.md`、`platforms.md`、`web_api.md`、`repositories.md` 分别维护各自模块流程。
 - `roadmap.md` 只记录当前阶段和演进方向，不作为行为契约。
 
 ## 适合谁看

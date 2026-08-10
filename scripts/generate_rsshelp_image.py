@@ -262,7 +262,7 @@ def _group_commands(cmds: list[CommandDoc]) -> list[dict]:
     for c in sorted(cmds, key=sort_key):
         if c.command.startswith("sub_profile") or c.command.startswith("sub_session"):
             groups["配置命令"].append(c)
-        elif c.command.startswith("sub_test") or c.command.startswith("rsshub_kb_"):
+        elif c.command.startswith("sub_test"):
             groups["管理员"].append(c)
         elif (
             c.command.startswith("sub_status")

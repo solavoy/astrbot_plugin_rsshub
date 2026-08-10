@@ -11,7 +11,6 @@ Plugin Pages 提供：
 - 推送历史查询、筛选、重试和清理。
 - 默认订阅设置。
 - 用户/订阅 handler 链编辑。
-- RSSHub Routes 知识库状态、初始化和同步任务管理。
 
 Plugin Pages 不创建新订阅，也不提供 TOML 导入导出。新增、导入和导出订阅请使用聊天命令或 AI agent。
 

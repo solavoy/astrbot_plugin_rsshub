@@ -1,6 +1,6 @@
 # 配置说明
 
-AstrBot 配置页只保留启动级基础设施配置、媒体配置、平台发送策略和 Routes 知识库配置。订阅默认值请在 Plugin Pages 中维护。
+AstrBot 配置页只保留启动级基础设施配置、媒体配置和平台发送策略。订阅默认值请在 Plugin Pages 中维护。
 
 插件启动时会按 `_conf_schema.json` 对实际配置做轻量自愈：补齐缺失字段、移除废弃字段、修正常见类型错误，并把下拉选项和滑块数值收敛到合法范围。只有检测到实际变化时才会写回配置文件。
 
@@ -50,6 +50,8 @@ AstrBot 配置页只保留启动级基础设施配置、媒体配置、平台发
 
 `enabled_platforms` 是平台多选列表，默认启用 `telegram`、`aiocqhttp`、`qq_official`。未选中的平台回退到默认发送器。
 
+`markdown_platforms` 是 Folo 风格 Markdown 渠道勾选列表，默认仅 `telegram`，选项覆盖 `telegram`、`aiocqhttp`、`qq_official`、`weixin_oc`。勾选的渠道输出标题加粗、可点击 via 链接、`---` 分隔线的 Markdown；Telegram 会实际渲染，其余渠道显示 Markdown 语法（是否渲染取决于平台客户端能力）。未勾选的渠道推送纯文本。
+
 平台策略写入 `platform_strategies` 模板列表。当前常用字段：
 
 | 配置项 | 作用范围 | 说明 |
@@ -61,21 +63,3 @@ AstrBot 配置页只保留启动级基础设施配置、媒体配置、平台发
 | `markdown_mode` | QQ Official | 预留 Markdown 三态配置；当前主动推送临时统一按纯文本发送。 |
 
 Telegraph 不是显式 `send_mode`。它只在 Telegram 自动发送策略中触发：自动发送、Telegram 策略启用 Telegraph、token 有效，且去重后的媒体条目数大于 1。
-
-## RSSHub Routes 知识库 (`route_knowledge`)
-
-用于将 RSSHub Routes Markdown 文档同步到 AstrBot 知识库。`/rsshub_kb_init` 可按 `kb_name` 自动创建空知识库，也可复用已有知识库。
-
-| 配置项 | 说明 | 默认值 |
-| --- | --- | --- |
-| `kb_name` | 同步目标知识库名称。 | `RSSHub Routes` |
-| `embedding_provider_id` | 自动创建知识库时使用的向量模型 Provider ID；留空使用第一个可用 Embedding Provider。 | `""` |
-| `rerank_provider_id` | 自动创建或补齐知识库时使用的重排序模型 Provider ID；留空时按可用能力关闭或默认选择。 | `""` |
-| `source_mode` | 同步来源模式：`mirror`、`auto`、`github`、`local`。 | `mirror` |
-| `source_base_url` | 包含 `metadata.json`、`index/` 和 `docs/` 的 raw 文件根地址。 | GitHub Raw |
-| `fallback_base_url` | `source_mode=auto` 时的备用 raw 文件根地址。 | GitHub Raw |
-| `local_source_dir` | `source_mode=local` 时的本地同步目录。 | `""` |
-| `timeout` | 下载 metadata 和 Markdown 文件的超时时间。 | `30` |
-| `batch_size` | 传给 AstrBot 知识库上传接口的 batch size。 | `32` |
-| `tasks_limit` | 传给 AstrBot 知识库上传接口的并发任务数。 | `3` |
-| `max_retries` | 传给 AstrBot 知识库上传接口的重试次数。 | `3` |

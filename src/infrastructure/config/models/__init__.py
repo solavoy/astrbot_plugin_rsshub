@@ -8,7 +8,6 @@ from .plugin_config_models import (
     GlobalConfig,
     HttpConfig,
     MediaConfig,
-    RouteKnowledgeConfig,
     RsshubPluginConfig,
 )
 from .runtime_settings import (
@@ -20,7 +19,6 @@ from .runtime_settings import (
     MediaPlatformLimits,
     MediaSettings,
     PlatformStrategySettings,
-    RouteKnowledgeSettings,
     RSSSettings,
     SchedulerSettings,
     SenderStrategySettings,
@@ -46,8 +44,6 @@ __all__ = [
     "MediaSettings",
     "PlatformSenderStrategyConfig",
     "PlatformStrategySettings",
-    "RouteKnowledgeConfig",
-    "RouteKnowledgeSettings",
     "RsshubPluginConfig",
     "RSSSettings",
     "SchedulerSettings",

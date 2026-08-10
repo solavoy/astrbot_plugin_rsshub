@@ -269,44 +269,6 @@ class ContentHandlersConfig(BaseModel):
         return cls.model_validate({**cls().model_dump(), **(data or {})})
 
 
-class RouteKnowledgeConfig(BaseModel):
-    """RSSHub Routes 知识库同步配置"""
-
-    kb_name: str = Field(default="RSSHub Routes", description="AstrBot 知识库名称")
-    embedding_provider_id: str = Field(
-        default="", description="默认向量模型 Provider ID"
-    )
-    rerank_provider_id: str = Field(
-        default="", description="默认重排序模型 Provider ID"
-    )
-    source_mode: str = Field(default="speed_test", description="知识库来源模式")
-    source_base_url: str = Field(
-        default=(
-            "https://raw.githubusercontent.com/"
-            "FlanChanXwO/rsshub-routes-knowledgebase/main"
-        ),
-        description="Routes 知识库文件源 base URL",
-    )
-    fallback_base_url: str = Field(
-        default=(
-            "https://raw.githubusercontent.com/"
-            "FlanChanXwO/rsshub-routes-knowledgebase/main"
-        ),
-        description="auto 模式下的 fallback base URL",
-    )
-    local_source_dir: str = Field(default="", description="local 模式本地目录")
-    timeout: int = Field(default=30, description="同步请求超时（秒）")
-    batch_size: int = Field(default=32, description="KB embedding 批大小")
-    tasks_limit: int = Field(default=3, description="KB embedding 并发任务数")
-    max_retries: int = Field(default=3, description="KB embedding 最大重试次数")
-
-    @classmethod
-    def from_dict(cls, data: dict[str, Any] | None) -> RouteKnowledgeConfig:
-        if not data:
-            return cls()
-        return cls.model_validate({**cls().model_dump(), **(data or {})})
-
-
 class RsshubPluginConfig(BaseModel):
     """RSSHub 插件统一配置类"""
 
@@ -320,7 +282,6 @@ class RsshubPluginConfig(BaseModel):
     sender_strategies: SenderStrategiesConfig = Field(
         default_factory=SenderStrategiesConfig
     )
-    route_knowledge: RouteKnowledgeConfig = Field(default_factory=RouteKnowledgeConfig)
     db_file: str = Field(default="rsshub.db", description="数据库文件名")
 
     @classmethod
@@ -359,7 +320,6 @@ class RsshubPluginConfig(BaseModel):
         global_cfg = astrbot_config.get("global_config", {})
         content_handlers_cfg = astrbot_config.get("content_handlers", {})
         sender_strategies_cfg = astrbot_config.get("sender_strategies")
-        route_knowledge_cfg = astrbot_config.get("route_knowledge", {})
 
         return cls(
             basic_config=BasicConfig.from_dict(basic_cfg),
@@ -368,7 +328,6 @@ class RsshubPluginConfig(BaseModel):
             media=MediaConfig.from_dict(media_cfg),
             content_handlers=ContentHandlersConfig.from_dict(content_handlers_cfg),
             sender_strategies=SenderStrategiesConfig.from_config(sender_strategies_cfg),
-            route_knowledge=RouteKnowledgeConfig.from_dict(route_knowledge_cfg),
             db_file=astrbot_config.get("db_file", "rsshub.db"),
         )
 

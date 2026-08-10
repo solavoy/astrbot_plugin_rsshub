@@ -293,6 +293,23 @@
           "type": "string"
         }
       },
+      "markdown_platforms": {
+        "type": "list",
+        "description": "使用 Folo 风格 Markdown 的消息渠道",
+        "hint": "勾选使用 Folo 风格 Markdown 排版的渠道（标题加粗、可点击 via 链接、--- 分隔线）。Telegram 原生支持 Markdown 渲染；QQ/微信 等渠道不渲染 Markdown，会显示 **粗体**、[链接](url) 等原始语法。默认仅 Telegram。",
+        "default": [
+          "telegram"
+        ],
+        "options": [
+          "telegram",
+          "aiocqhttp",
+          "qq_official",
+          "weixin_oc"
+        ],
+        "items": {
+          "type": "string"
+        }
+      },
       "platform_strategies": {
         "type": "template_list",
         "description": "平台策略模板",
@@ -351,116 +368,6 @@
               }
             }
           }
-        }
-      }
-    }
-  },
-  "route_knowledge": {
-    "type": "object",
-    "description": "RSSHub Routes 知识库",
-    "hint": "配置 RSSHub Routes 文档同步到 AstrBot 知识库的来源与模型",
-    "items": {
-      "kb_name": {
-        "type": "string",
-        "description": "知识库名称",
-        "hint": "同步目标 AstrBot 知识库名称；不存在时可由 /rsshub_kb_init 自动创建",
-        "default": "RSSHub Routes"
-      },
-      "embedding_provider_id": {
-        "type": "string",
-        "description": "向量模型 Provider ID",
-        "_special": "select_provider:embedding",
-        "hint": "用于自动创建 RSSHub Routes 知识库的 Embedding Provider。留空则使用当前第一个可用的 Embedding Provider",
-        "default": ""
-      },
-      "rerank_provider_id": {
-        "type": "string",
-        "description": "重排序模型 Provider ID",
-        "_special": "select_provider:rerank",
-        "hint": "用于自动创建或补齐 RSSHub Routes 知识库的 Rerank Provider。留空则使用当前第一个可用的 Rerank Provider；没有可用 Rerank Provider 时保持关闭",
-        "default": ""
-      },
-      "source_mode": {
-        "type": "string",
-        "description": "同步来源模式",
-        "hint": "mirror 使用 source_base_url；auto 失败后尝试 fallback_base_url；speed_test 自动测速选最快镜像；github 使用内置 GitHub Raw；local 从本地目录读取",
-        "default": "speed_test",
-        "options": [
-          "speed_test",
-          "mirror",
-          "auto",
-          "github",
-          "local"
-        ]
-      },
-      "source_base_url": {
-        "type": "string",
-        "description": "同步源 Base URL",
-        "hint": "包含 metadata.json、index/ 和 docs/ 的 raw 文件根地址；请选择已适配当前拼接规则的来源",
-        "default": "https://raw.githubusercontent.com/FlanChanXwO/rsshub-routes-knowledgebase/main",
-        "options": [
-          "https://raw.githubusercontent.com/FlanChanXwO/rsshub-routes-knowledgebase/main",
-          "https://ghfast.top/https://raw.githubusercontent.com/FlanChanXwO/rsshub-routes-knowledgebase/main"
-        ]
-      },
-      "fallback_base_url": {
-        "type": "string",
-        "description": "备用 Base URL",
-        "hint": "source_mode=auto 时 source_base_url 失败后使用；请选择已适配当前拼接规则的来源",
-        "default": "https://raw.githubusercontent.com/FlanChanXwO/rsshub-routes-knowledgebase/main",
-        "options": [
-          "https://raw.githubusercontent.com/FlanChanXwO/rsshub-routes-knowledgebase/main",
-          "https://ghfast.top/https://raw.githubusercontent.com/FlanChanXwO/rsshub-routes-knowledgebase/main"
-        ]
-      },
-      "local_source_dir": {
-        "type": "string",
-        "description": "本地同步目录",
-        "hint": "source_mode=local 时使用，目录内应包含 metadata.json、index/ 和 docs/",
-        "default": ""
-      },
-      "timeout": {
-        "type": "int",
-        "description": "同步请求超时（秒）",
-        "hint": "下载 metadata 和 Markdown 文件的请求超时",
-        "default": 30,
-        "slider": {
-          "min": 1,
-          "max": 300,
-          "step": 1
-        }
-      },
-      "batch_size": {
-        "type": "int",
-        "description": "Embedding 批大小",
-        "hint": "传给 AstrBot 知识库上传接口的 batch_size",
-        "default": 32,
-        "slider": {
-          "min": 1,
-          "max": 256,
-          "step": 1
-        }
-      },
-      "tasks_limit": {
-        "type": "int",
-        "description": "Embedding 并发数",
-        "hint": "传给 AstrBot 知识库上传接口的 tasks_limit",
-        "default": 3,
-        "slider": {
-          "min": 1,
-          "max": 32,
-          "step": 1
-        }
-      },
-      "max_retries": {
-        "type": "int",
-        "description": "Embedding 重试次数",
-        "hint": "传给 AstrBot 知识库上传接口的 max_retries",
-        "default": 3,
-        "slider": {
-          "min": 0,
-          "max": 10,
-          "step": 1
         }
       }
     }
