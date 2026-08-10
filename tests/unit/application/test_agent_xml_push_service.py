@@ -91,7 +91,7 @@ async def test_agent_xml_push_service_dry_run_returns_preview():
     assert result["dry_run"] is True
     preview = result["preview"]
     assert preview["entry_guid"].startswith("agent:")
-    # telegram 平台输出 Folo 风格 Markdown（标题加粗 + 可点击 via 链接）
+    # telegram 平台输出 Markdown 排版（标题加粗 + 可点击 via 链接）
     assert "**Hello**" in preview["content"]
     assert (
         "via [https://example\\.com/post](https://example\\.com/post) | "

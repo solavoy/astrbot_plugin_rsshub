@@ -1634,3 +1634,166 @@ async def test_get_or_download_prepared_passes_relay_kwargs_through(
 
     assert captured == [expected_fetch]
     assert prepared.original_url == original
+
+
+@pytest.mark.asyncio
+async def test_probe_media_size_returns_content_length(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    seen_headers: dict[str, str] = {}
+
+    class FakeResponse:
+        status = 200
+        headers = {"Content-Length": "5242880", "Content-Type": "video/mp4"}
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return None
+
+    class FakeSession:
+        def __init__(self, **_kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return None
+
+        def head(self, _url, **kwargs):
+            seen_headers.update(kwargs.get("headers") or {})
+            return FakeResponse()
+
+    monkeypatch.setattr(
+        "astrbot_plugin_rsshub.src.infrastructure.media.media_downloader.aiohttp.ClientSession",
+        FakeSession,
+    )
+
+    size = await MediaDownloader().probe_media_size(
+        url="https://example.com/video.mp4",
+        timeout_seconds=5,
+        proxy="",
+    )
+
+    assert size == 5242880
+    assert seen_headers["User-Agent"].startswith("Mozilla/5.0")
+
+
+@pytest.mark.asyncio
+async def test_probe_media_size_returns_none_on_http_error(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    class FakeResponse:
+        status = 403
+        headers = {"Content-Length": "1024"}
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return None
+
+    class FakeSession:
+        def __init__(self, **_kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return None
+
+        def head(self, _url, **kwargs):
+            return FakeResponse()
+
+    monkeypatch.setattr(
+        "astrbot_plugin_rsshub.src.infrastructure.media.media_downloader.aiohttp.ClientSession",
+        FakeSession,
+    )
+
+    size = await MediaDownloader().probe_media_size(
+        url="https://example.com/video.mp4",
+        timeout_seconds=5,
+        proxy="",
+    )
+
+    assert size is None
+
+
+@pytest.mark.asyncio
+async def test_probe_media_size_returns_none_when_content_length_missing(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    class FakeResponse:
+        status = 200
+        headers = {}
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return None
+
+    class FakeSession:
+        def __init__(self, **_kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return None
+
+        def head(self, _url, **kwargs):
+            return FakeResponse()
+
+    monkeypatch.setattr(
+        "astrbot_plugin_rsshub.src.infrastructure.media.media_downloader.aiohttp.ClientSession",
+        FakeSession,
+    )
+
+    size = await MediaDownloader().probe_media_size(
+        url="https://example.com/stream",
+        timeout_seconds=5,
+        proxy="",
+    )
+
+    assert size is None
+
+
+@pytest.mark.asyncio
+async def test_probe_media_size_skips_m3u8_without_request(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    called = False
+
+    class FakeSession:
+        def __init__(self, **_kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return None
+
+        def head(self, _url, **kwargs):
+            nonlocal called
+            called = True
+            raise AssertionError("m3u8 should not be probed")
+
+    monkeypatch.setattr(
+        "astrbot_plugin_rsshub.src.infrastructure.media.media_downloader.aiohttp.ClientSession",
+        FakeSession,
+    )
+
+    size = await MediaDownloader().probe_media_size(
+        url="https://example.com/live/index.m3u8",
+        timeout_seconds=5,
+        proxy="",
+    )
+
+    assert size is None
+    assert not called

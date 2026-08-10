@@ -184,6 +184,17 @@
           "step": 1
         }
       },
+      "media_size_limit_mb": {
+        "type": "int",
+        "description": "媒体下载大小上限（MB）",
+        "hint": "超过该大小的媒体不下载、直接把链接嵌入文本发送；0 表示不限制。用于降低大文件/视频对服务器带宽和流量的占用",
+        "default": 0,
+        "slider": {
+          "min": 0,
+          "max": 10240,
+          "step": 1
+        }
+      },
       "cache_enabled": {
         "type": "bool",
         "description": "启用媒体与转码缓存",
@@ -295,8 +306,8 @@
       },
       "markdown_platforms": {
         "type": "list",
-        "description": "使用 Folo 风格 Markdown 的消息渠道",
-        "hint": "勾选使用 Folo 风格 Markdown 排版的渠道（标题加粗、可点击 via 链接、--- 分隔线）。Telegram 原生支持 Markdown 渲染；QQ/微信 等渠道不渲染 Markdown，会显示 **粗体**、[链接](url) 等原始语法。默认仅 Telegram。",
+        "description": "使用 Markdown 排版的消息渠道",
+        "hint": "勾选使用 Markdown 排版的渠道（标题加粗、可点击 via 链接、--- 分隔线）。Telegram 原生支持 Markdown 渲染；QQ/微信 等渠道不渲染 Markdown，会显示 **粗体**、[链接](url) 等原始语法。默认仅 Telegram。",
         "default": [
           "telegram"
         ],

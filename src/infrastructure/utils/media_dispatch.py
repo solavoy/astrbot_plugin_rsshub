@@ -59,6 +59,16 @@ class MediaDispatchResolver:
         media_type = str(item.media_type or "").strip()
         original_url = str(item.original_url or "")
 
+        # 超过大小上限的媒体不发送，由调用方把链接嵌入文本
+        if item.oversize:
+            return MediaDispatchInfo(
+                media_type="",
+                component_kind="",
+                file="",
+                original_url=original_url,
+            )
+
+
         # 无声视频转 GIF 后按图片发送
         if (
             media_type == "video"

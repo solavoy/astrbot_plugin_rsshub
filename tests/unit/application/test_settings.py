@@ -906,6 +906,7 @@ def test_application_settings_maps_media_config():
                 "image_relay_base_url": "https://wsrv.nl/",
                 "media_relay_base_url": "https://relay.example/",
                 "media_download_concurrency": 4,
+                "media_size_limit_mb": 50,
                 "table_to_image": False,
                 "video_transcode": True,
                 "video_transcode_timeout": 333,
@@ -921,6 +922,7 @@ def test_application_settings_maps_media_config():
     assert settings.media.image_relay_base_url == "https://wsrv.nl/"
     assert settings.media.media_relay_base_url == "https://relay.example/"
     assert settings.media.media_download_concurrency == 4
+    assert settings.media.media_size_limit_mb == 50
     assert settings.media.table_to_image is False
     assert settings.media.video_transcode is True
     assert settings.media.video_transcode_timeout == 333

@@ -280,6 +280,65 @@ class MediaDownloader:
             ) from last_err
         raise RuntimeError(f"download failed for all candidates, url={url}")
 
+    async def probe_media_size(
+        self,
+        *,
+        url: str,
+        timeout_seconds: int,
+        proxy: str,
+    ) -> int | None:
+        """探测远程媒体 Content-Length（字节），供大小上限降级使用。
+
+        通过 HEAD 请求读取 Content-Length，不下载响应体。HEAD 失败、非 2xx、
+        无 Content-Length、或 URL 为 m3u8/不可探测类型时返回 None（不拦截，
+        由调用方按未超限处理走正常下载）。
+
+        Returns:
+            Content-Length 字节数；无法探测时返回 None
+        """
+        media_hint = detect_media_hint(url=url)
+        if media_hint.suffix == ".m3u8":
+            return None
+
+        timeout = aiohttp.ClientTimeout(total=max(1, int(timeout_seconds)))
+
+        async with aiohttp.ClientSession(
+            timeout=timeout,
+            trust_env=True,
+            connector=build_tls_connector(),
+        ) as session:
+            for candidate_url in self._expand_download_candidates(url):
+                try:
+                    async with session.head(
+                        candidate_url,
+                        proxy=proxy or None,
+                        headers=_MEDIA_REQUEST_HEADERS,
+                        allow_redirects=True,
+                        max_redirects=10,
+                    ) as resp:
+                        if resp.status >= 400 or resp.status < 200:
+                            continue
+                        content_length = resp.headers.get("Content-Length")
+                        if content_length is None:
+                            return None
+                        try:
+                            size = int(content_length)
+                        except (TypeError, ValueError):
+                            return None
+                        if size < 0:
+                            return None
+                        return size
+                except Exception as ex:
+                    logger.debug(
+                        "Media size probe attempt failed: origin=%s, "
+                        "candidate=%s, err_type=%s, err=%r",
+                        url,
+                        candidate_url,
+                        type(ex).__name__,
+                        ex,
+                    )
+        return None
+
     @staticmethod
     def safe_unlink(path: Path | None) -> None:
         """安全删除文件"""

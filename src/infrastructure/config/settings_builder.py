@@ -443,6 +443,9 @@ def build_application_settings(config: Any) -> ApplicationSettings:
             media_download_concurrency=max(
                 1, int(_get_value(media_cfg, "media_download_concurrency", 1) or 1)
             ),
+            media_size_limit_mb=max(
+                0, int(_get_value(media_cfg, "media_size_limit_mb", 0) or 0)
+            ),
             table_to_image=bool(_get_value(media_cfg, "table_to_image", True)),
             video_transcode=bool(_get_value(media_cfg, "video_transcode", False)),
             video_transcode_timeout=max(

@@ -93,8 +93,8 @@ async def test_dispatch_sends_via_injected_sender_provider():
 
 
 @pytest.mark.asyncio
-async def test_dispatch_formats_folo_markdown_only_for_telegram():
-    """自动按平台：Telegram 输出 Folo 风格 Markdown，OneBot 保持纯文本。"""
+async def test_dispatch_formats_markdown_only_for_telegram():
+    """自动按平台：Telegram 输出 Markdown 排版，OneBot 保持纯文本。"""
     sender = FakeSender()
     subscriptions = [
         Subscription(
@@ -149,7 +149,7 @@ async def test_dispatch_formats_folo_markdown_only_for_telegram():
     for req, ctx in sender.requests:
         requests[req.session_id] = (req, ctx)
 
-    # Telegram：Folo 风格 Markdown + 渲染标记
+    # Telegram：Markdown 排版 + 渲染标记
     tg_req, tg_ctx = requests["telegram:Group:1"]
     assert "**title**" in tg_req.message
     assert "\n\n---\n\n" in tg_req.message
@@ -168,7 +168,7 @@ async def test_dispatch_formats_folo_markdown_only_for_telegram():
 
 @pytest.mark.asyncio
 async def test_dispatch_uses_configured_markdown_platforms():
-    """勾选 aiocqhttp 后 OneBot 也输出 Folo Markdown 并带渲染标记。"""
+    """勾选 aiocqhttp 后 OneBot 也输出 Markdown 并带渲染标记。"""
     from astrbot_plugin_rsshub.src.infrastructure.pipeline import EntryTextFormatter
 
     sender = FakeSender()
@@ -866,7 +866,7 @@ async def test_dispatch_with_raw_entry_keeps_cleaned_content_when_not_processed(
         id=1,
         user_id="user-1",
         feed_id=10,
-        # 非 telegram 平台，避免 Folo Markdown 干扰"内容清洗"断言
+        # 非 telegram 平台，避免 Markdown 干扰"内容清洗"断言
         platform_name="onebot",
         target_session="onebot:user-1",
     )
@@ -934,7 +934,7 @@ async def test_dispatch_formats_raw_entry_with_effective_options_from_subscripti
         id=1,
         user_id="user-1",
         feed_id=10,
-        # 非 telegram 平台，避免 Folo Markdown 干扰"生效选项"断言
+        # 非 telegram 平台，避免 Markdown 干扰"生效选项"断言
         platform_name="onebot",
         target_session="onebot:user-1",
         length_limit=4,

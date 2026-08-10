@@ -140,6 +140,7 @@ class MediaSettings:
     image_relay_base_url: str = ""
     media_relay_base_url: str = ""
     media_download_concurrency: int = 1
+    media_size_limit_mb: int = 0
     table_to_image: bool = True
     video_transcode: bool = False
     video_transcode_timeout: int = 120

@@ -186,6 +186,7 @@ class MediaConfig(BaseModel):
     image_relay_base_url: str = Field(default="", description="图片反代基础URL")
     media_relay_base_url: str = Field(default="", description="通用媒体反代基础URL")
     media_download_concurrency: int = Field(default=1, description="媒体预下载并发数")
+    media_size_limit_mb: int = Field(default=0, description="媒体下载大小上限（MB），0=不限制")
     cache_enabled: bool = Field(default=True, description="启用媒体缓存")
     cache_ttl_seconds: int = Field(
         default=MEDIA_CACHE_TTL_SECONDS_DEFAULT,

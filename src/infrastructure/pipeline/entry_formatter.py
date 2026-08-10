@@ -66,7 +66,7 @@ class EntryTextFormatter:
     # 表格转图总开关（media.table_to_image）；关闭后表格统一回退纯文本。
     _table_to_image_enabled: bool = True
 
-    # 使用 Folo 风格 Markdown 的渠道（规范平台名），由 sender_strategies
+    # 使用 Markdown 排版的渠道（规范平台名），由 sender_strategies
     # 的 markdown_platforms 勾选配置驱动；默认仅 Telegram。
     _markdown_platforms: frozenset[str] = frozenset(SENDER_MARKDOWN_PLATFORM_DEFAULT)
 
@@ -77,7 +77,7 @@ class EntryTextFormatter:
 
     @classmethod
     def configure_markdown_platforms(cls, platforms: list[str] | tuple[str, ...]) -> None:
-        """配置使用 Folo 风格 Markdown 的消息渠道（启动装配时调用）。
+        """配置使用 Markdown 排版的消息渠道（启动装配时调用）。
 
         传入勾选的规范平台名列表；空列表表示任何渠道都不使用 Markdown。
         """
@@ -158,8 +158,8 @@ class EntryTextFormatter:
     def resolve_output_format(cls, platform: str | None) -> EntryOutputFormat:
         """按平台解析最终输出格式（由 markdown_platforms 勾选配置驱动）。
 
-        命中勾选渠道（含别名，如 tg→telegram、onebot→aiocqhttp）输出 Folo
-        风格 Markdown，其余平台保持纯文本，避免 ``**标题**``、``[链接](url)``
+        命中勾选渠道（含别名，如 tg→telegram、onebot→aiocqhttp）输出
+        Markdown 排版，其余平台保持纯文本，避免 ``**标题**``、``[链接](url)``
         等 Markdown 原文直接暴露给用户。
         """
         normalized = str(platform or "").strip().lower()

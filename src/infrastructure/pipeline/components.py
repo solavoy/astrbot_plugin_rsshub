@@ -100,7 +100,7 @@ class MessageComponentSorter:
         from ..utils.media_dispatch import MediaDispatchResolver
 
         for item in prepared_media:
-            if item.download_failed:
+            if item.download_failed or item.oversize:
                 continue
             if not item.local_path and not item.original_url:
                 continue
@@ -127,7 +127,7 @@ class MessageComponentSorter:
         if prepared_media:
             for item in prepared_media:
                 if (
-                    item.download_failed
+                    (item.download_failed or item.oversize)
                     and item.original_url not in failed
                     and not item.generated
                     and not is_generated_media_url(item.original_url)

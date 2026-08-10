@@ -62,6 +62,7 @@ class DefaultMessageSender:
     _gif_transcode: bool = False
     _gif_transcode_timeout: int = 60
     _gif_transcode_profile: str = GIF_TRANSCODE_PROFILE_COMPATIBILITY
+    _media_size_limit_bytes: int = 0
     _telegram_photo_max_bytes: int = TELEGRAM_PHOTO_MAX_BYTES
     _qq_official_media_threshold: int = QQ_OFFICIAL_MEDIA_THRESHOLD_DEFAULT
     _qq_official_degrade_strategy: str = QQ_OFFICIAL_DEGRADE_STRATEGY_DEFAULT
@@ -98,6 +99,7 @@ class DefaultMessageSender:
         gif_transcode: bool = False,
         gif_transcode_timeout: int = 60,
         gif_transcode_profile: str = GIF_TRANSCODE_PROFILE_COMPATIBILITY,
+        media_size_limit_mb: int = 0,
         telegram_photo_max_bytes: int = TELEGRAM_PHOTO_MAX_BYTES,
         onebot_napcat_stream_mode: str = "fallback",
         qq_official_media_threshold: int = QQ_OFFICIAL_MEDIA_THRESHOLD_DEFAULT,
@@ -109,6 +111,11 @@ class DefaultMessageSender:
         cls._gif_transcode = bool(gif_transcode)
         cls._gif_transcode_timeout = max(1, int(gif_transcode_timeout))
         cls._gif_transcode_profile = str(gif_transcode_profile or "").strip()
+        try:
+            limit_mb = max(0, int(media_size_limit_mb or 0))
+        except (TypeError, ValueError):
+            limit_mb = 0
+        cls._media_size_limit_bytes = limit_mb * 1024 * 1024
         cls._telegram_photo_max_bytes = max(1, int(telegram_photo_max_bytes))
         cls._onebot_napcat_stream_mode_default = str(
             onebot_napcat_stream_mode or "fallback"
@@ -153,6 +160,16 @@ class DefaultMessageSender:
             return max(1, int(value or 1))
         except (TypeError, ValueError):
             return 1
+
+    @classmethod
+    def _get_media_size_limit_bytes(cls) -> int:
+        value = getattr(cls, "_media_size_limit_bytes", None)
+        if value is None:
+            value = getattr(DefaultMessageSender, "_media_size_limit_bytes", 0)
+        try:
+            return max(0, int(value or 0))
+        except (TypeError, ValueError):
+            return 0
 
     @classmethod
     def _should_transcode_video(cls) -> bool:
@@ -408,6 +425,27 @@ class DefaultMessageSender:
         proxy: str,
     ) -> PreparedMedia:
         try:
+            size_limit_bytes = self._get_media_size_limit_bytes()
+            if size_limit_bytes > 0:
+                size = await downloader.probe_media_size(
+                    url=media_url,
+                    timeout_seconds=timeout,
+                    proxy=proxy,
+                )
+                if size is not None and size > size_limit_bytes:
+                    logger.info(
+                        "prepare_media: media exceeds size limit, skip download and "
+                        "embed link: limit_bytes=%s, size_bytes=%s, url=%s",
+                        size_limit_bytes,
+                        size,
+                        media_url,
+                    )
+                    return PreparedMedia(
+                        media_type=media_type,
+                        original_url=media_url,
+                        oversize=True,
+                    )
+
             effective_media_type, try_convert_gif = (
                 self._resolve_gif_transcode_decision(
                     media_type=media_type,
@@ -712,11 +750,11 @@ class DefaultMessageSender:
     def _collect_failed_urls(
         prepared_media: list[PreparedMedia],
     ) -> list[str]:
-        """从 PreparedMedia 中收集下载失败的 URL"""
+        """从 PreparedMedia 中收集下载失败或超过大小上限的 URL"""
         return [
             item.original_url
             for item in prepared_media
-            if item.download_failed and not item.generated
+            if (item.download_failed or item.oversize) and not item.generated
         ]
 
     async def _prepare_effective_media(

@@ -73,6 +73,8 @@ def test_conf_schema_is_scoped_to_startup_credentials_and_sender_strategies():
         "max": 32,
         "step": 1,
     }
+    assert media_items["media_size_limit_mb"]["type"] == "int"
+    assert media_items["media_size_limit_mb"]["default"] == 0
     assert media_items["cache_enabled"]["type"] == "bool"
     assert media_items["cache_enabled"]["default"] is True
     assert "GIF" in media_items["cache_enabled"]["hint"]
@@ -134,7 +136,7 @@ def test_conf_schema_is_scoped_to_startup_credentials_and_sender_strategies():
     assert enabled_platforms["default"] == sender_strategy_options
     assert enabled_platforms["options"] == sender_strategy_options
     assert enabled_platforms["items"]["type"] == "string"
-    # Folo Markdown 渠道勾选：默认仅 Telegram，选项覆盖全部支持平台
+    # Markdown 渠道勾选：默认仅 Telegram，选项覆盖全部支持平台
     markdown_platforms = sender_strategies["items"]["markdown_platforms"]
     assert markdown_platforms["type"] == "list"
     assert markdown_platforms["default"] == ["telegram"]

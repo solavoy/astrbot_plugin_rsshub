@@ -356,6 +356,7 @@ def _configure_message_senders(app_settings: ApplicationSettings) -> None:
         gif_transcode=app_settings.media.gif_transcode,
         gif_transcode_timeout=app_settings.media.gif_transcode_timeout,
         gif_transcode_profile=app_settings.media.gif_transcode_profile,
+        media_size_limit_mb=app_settings.media.media_size_limit_mb,
         telegram_photo_max_bytes=app_settings.media_platform_limits.telegram_photo_max_bytes,
         onebot_napcat_stream_mode=(
             app_settings.media_platform_limits.onebot_napcat_stream_mode

@@ -37,6 +37,7 @@ class PreparedMedia:
     original_url: str
     local_path: Path | None = None
     download_failed: bool = False
+    oversize: bool = False
     detected_mime: str = ""
     detected_suffix: str = ""
     detection_source: str = ""

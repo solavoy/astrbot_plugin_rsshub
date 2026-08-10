@@ -103,7 +103,7 @@ class SenderStrategiesConfig(BaseModel):
     qq_official: bool = Field(default=True, description="QQ官方策略")
     markdown_platforms: list[str] = Field(
         default_factory=lambda: list(SENDER_MARKDOWN_PLATFORM_DEFAULT),
-        description="使用 Folo 风格 Markdown 的消息渠道",
+        description="使用 Markdown 排版的消息渠道",
     )
     telegram_settings: PlatformSenderStrategyConfig = Field(
         default_factory=PlatformSenderStrategyConfig, alias="telegram_config"

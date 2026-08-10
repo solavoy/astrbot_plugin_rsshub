@@ -240,7 +240,7 @@ SENDER_STRATEGY_ENABLED_PLATFORMS = (
     PlatformName.QQ_OFFICIAL.value,
 )
 
-# Folo 风格 Markdown 推送渠道配置：勾选使用 Markdown 的平台（默认仅 Telegram）。
+# Markdown 排版推送渠道配置：勾选使用 Markdown 的平台（默认仅 Telegram）。
 SENDER_MARKDOWN_PLATFORM_OPTIONS: tuple[str, ...] = ALL_SUPPORTED_PLATFORMS
 SENDER_MARKDOWN_PLATFORM_DEFAULT: tuple[str, ...] = (PlatformName.TELEGRAM.value,)
 

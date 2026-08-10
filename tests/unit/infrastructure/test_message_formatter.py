@@ -358,7 +358,7 @@ async def test_entry_text_formatter_can_render_lightweight_markdown():
     assert "Body with \\*\\*literal\\*\\* markdown" in text
     # MarkdownV2 全集合转义（`#` `-` 等也需转义，避免 Telegram 解析失败）
     assert "\\#tag\\-one \\#tag\\_two" in text
-    # Folo 风格归属分隔线
+    # Markdown 归属分隔线
     assert "\n\n---\n\n" in text
     assert (
         "via [https://example\\.com/post](https://example\\.com/post) | Feed"

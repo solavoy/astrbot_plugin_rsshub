@@ -37,6 +37,10 @@ from astrbot_plugin_rsshub.src.infrastructure.messaging.senders.types import (
 class _FakeDownloader:
     calls: list[dict] = []
     path: Path = Path("/tmp/source.webm")
+    probe_size: int | None = None
+
+    async def probe_media_size(self, **kwargs):
+        return self.probe_size
 
     async def get_or_download(self, **kwargs):
         self.calls.append(kwargs)
@@ -81,6 +85,7 @@ def _reset_sender_behavior():
     )
     _FakeDownloader.calls = []
     _FakeDownloader.path = Path("/tmp/source.webm")
+    _FakeDownloader.probe_size = None
     yield
     MediaDownloader.configure_cache(
         enabled=True,
@@ -456,6 +461,96 @@ async def test_prepare_media_always_downloads_media(monkeypatch, fake_detector):
     assert _FakeDownloader.calls[0]["url"] == (
         "https://example.com/remote-only-video.webm"
     )
+
+
+@pytest.mark.asyncio
+async def test_prepare_media_marks_oversize_media_without_downloading(
+    monkeypatch,
+    fake_detector,
+):
+    monkeypatch.setattr(
+        "astrbot_plugin_rsshub.src.infrastructure.media.MediaDownloader",
+        _FakeDownloader,
+    )
+    _FakeDownloader.probe_size = 11 * 1024 * 1024  # 11MB > 10MB limit
+    DefaultMessageSender.configure_behavior(media_size_limit_mb=10)
+
+    prepared = await DefaultMessageSender().prepare_media(
+        [("video", "https://example.com/big-video.mp4")]
+    )
+
+    assert len(prepared) == 1
+    assert prepared[0].oversize is True
+    assert prepared[0].local_path is None
+    assert prepared[0].original_url == "https://example.com/big-video.mp4"
+    # 超限媒体不应触发实际下载
+    assert _FakeDownloader.calls == []
+
+
+@pytest.mark.asyncio
+async def test_prepare_media_downloads_media_within_size_limit(
+    monkeypatch,
+    fake_detector,
+):
+    monkeypatch.setattr(
+        "astrbot_plugin_rsshub.src.infrastructure.media.MediaDownloader",
+        _FakeDownloader,
+    )
+    _FakeDownloader.probe_size = 5 * 1024 * 1024  # 5MB <= 10MB limit
+    DefaultMessageSender.configure_behavior(media_size_limit_mb=10)
+
+    prepared = await DefaultMessageSender().prepare_media(
+        [("video", "https://example.com/normal-video.mp4")]
+    )
+
+    assert len(prepared) == 1
+    assert prepared[0].oversize is False
+    assert prepared[0].local_path == Path("/tmp/source.webm")
+    assert len(_FakeDownloader.calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_prepare_media_probe_none_falls_back_to_download(
+    monkeypatch,
+    fake_detector,
+):
+    monkeypatch.setattr(
+        "astrbot_plugin_rsshub.src.infrastructure.media.MediaDownloader",
+        _FakeDownloader,
+    )
+    _FakeDownloader.probe_size = None  # 无法探测 → 走正常下载
+    DefaultMessageSender.configure_behavior(media_size_limit_mb=10)
+
+    prepared = await DefaultMessageSender().prepare_media(
+        [("video", "https://example.com/unknown-size.mp4")]
+    )
+
+    assert len(prepared) == 1
+    assert prepared[0].oversize is False
+    assert prepared[0].local_path == Path("/tmp/source.webm")
+    assert len(_FakeDownloader.calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_collect_failed_urls_includes_oversize(monkeypatch, fake_detector):
+    from astrbot_plugin_rsshub.src.infrastructure.messaging.senders.types import (
+        PreparedMedia,
+    )
+
+    items = [
+        PreparedMedia(
+            media_type="video",
+            original_url="https://example.com/oversize.mp4",
+            oversize=True,
+        ),
+        PreparedMedia(
+            media_type="image",
+            original_url="https://example.com/ok.png",
+        ),
+    ]
+    assert DefaultMessageSender._collect_failed_urls(items) == [
+        "https://example.com/oversize.mp4"
+    ]
 
 
 @pytest.mark.asyncio

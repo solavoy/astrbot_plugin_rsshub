@@ -81,7 +81,7 @@ provider 会同时解析 sender strategy：
 
 ### Markdown 文本发送
 
-RSS 文本格式化层支持平台感知的轻量 Markdown 输出，渠道由 `sender_strategies.markdown_platforms` 勾选配置（默认仅 `telegram`，选项覆盖 `telegram`/`aiocqhttp`/`qq_official`/`weixin_oc`）。勾选的渠道输出 Folo 风格 Markdown：标题加粗、可点击 via 链接、`---` 归属分隔线，转义按 MarkdownV2 全集合处理（`docs/project/sender.md` 契约：AstrBot Telegram adapter 对 Plain 文本走 MarkdownV2 转换）。未勾选的渠道保持纯文本，避免 `**标题**`、`[链接](链接)` 等 Markdown 原文直接暴露给用户。
+RSS 文本格式化层支持平台感知的轻量 Markdown 输出，渠道由 `sender_strategies.markdown_platforms` 勾选配置（默认仅 `telegram`，选项覆盖 `telegram`/`aiocqhttp`/`qq_official`/`weixin_oc`）。勾选的渠道输出 Markdown 排版：标题加粗、可点击 via 链接、`---` 归属分隔线，转义按 MarkdownV2 全集合处理（`docs/project/sender.md` 契约：AstrBot Telegram adapter 对 Plain 文本走 MarkdownV2 转换）。未勾选的渠道保持纯文本，避免 `**标题**`、`[链接](链接)` 等 Markdown 原文直接暴露给用户。
 
 当前只有 Telegram 会真正渲染 Markdown（`MessageChain.use_markdown(True)`，按 context 的 `render_markdown` 标记）；其余渠道勾选后内容为 Markdown 语法，是否渲染取决于平台客户端能力。配置为空列表表示任何渠道都不使用 Markdown。
 

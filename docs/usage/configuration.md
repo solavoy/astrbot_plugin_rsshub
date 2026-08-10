@@ -50,7 +50,7 @@ AstrBot 配置页只保留启动级基础设施配置、媒体配置和平台发
 
 `enabled_platforms` 是平台多选列表，默认启用 `telegram`、`aiocqhttp`、`qq_official`。未选中的平台回退到默认发送器。
 
-`markdown_platforms` 是 Folo 风格 Markdown 渠道勾选列表，默认仅 `telegram`，选项覆盖 `telegram`、`aiocqhttp`、`qq_official`、`weixin_oc`。勾选的渠道输出标题加粗、可点击 via 链接、`---` 分隔线的 Markdown；Telegram 会实际渲染，其余渠道显示 Markdown 语法（是否渲染取决于平台客户端能力）。未勾选的渠道推送纯文本。
+`markdown_platforms` 是 Markdown 排版渠道勾选列表，默认仅 `telegram`，选项覆盖 `telegram`、`aiocqhttp`、`qq_official`、`weixin_oc`。勾选的渠道输出标题加粗、可点击 via 链接、`---` 分隔线的 Markdown；Telegram 会实际渲染，其余渠道显示 Markdown 语法（是否渲染取决于平台客户端能力）。未勾选的渠道推送纯文本。
 
 平台策略写入 `platform_strategies` 模板列表。当前常用字段：
 

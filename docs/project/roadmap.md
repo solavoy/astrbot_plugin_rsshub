@@ -7,7 +7,7 @@
 - 命令语义回归收口
 - `link_preview` 全量移除
 - 类型化配置模型与运行态设置统一到 `src/infrastructure/config/models/`，其中 `src/infrastructure/config/datamodels.py` 仅作为兼容导出
-- Folo 风格 Markdown 推送与 `markdown_platforms` 渠道勾选配置
+- Markdown 排版推送与 `markdown_platforms` 渠道勾选配置
 - RSSHub Routes 知识库功能移除（`/rsshub_kb_*` 命令、同步服务、Dashboard 页面、配置）
 - 内容处理器功能移除（`ContentHandlerRuntime`、handler registry、`ai_filter`/`ai_transform`、LLM handler 工具、数据库 handlers 三列）
 - Plugin Pages 管理面板大幅扩展

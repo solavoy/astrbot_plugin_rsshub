@@ -63,7 +63,7 @@ class TelegramMessageSender(DefaultMessageSender):
 
     @staticmethod
     def _context_render_markdown(context: MessageContext | None) -> bool | None:
-        """内容是否为 Folo 风格 Markdown（Telegram adapter 按 MarkdownV2 渲染）。
+        """内容是否为 Markdown 排版（Telegram adapter 按 MarkdownV2 渲染）。
 
         返回 ``None`` 时不改动 MessageChain 的 markdown 标记（保持默认纯文本）。
         """
@@ -106,6 +106,7 @@ class TelegramMessageSender(DefaultMessageSender):
                         original_url=item.original_url,
                         local_path=planned_path,
                         download_failed=item.download_failed,
+                        oversize=item.oversize,
                         detected_mime=item.detected_mime,
                         detected_suffix=planned_path.suffix.lower(),
                         detection_source=item.detection_source,
@@ -122,6 +123,7 @@ class TelegramMessageSender(DefaultMessageSender):
                     original_url=item.original_url,
                     local_path=Path(first.file),
                     download_failed=item.download_failed,
+                    oversize=item.oversize,
                     detected_mime=item.detected_mime,
                     detected_suffix=Path(first.file).suffix.lower(),
                     detection_source=item.detection_source,
