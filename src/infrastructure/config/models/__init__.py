@@ -10,6 +10,7 @@ from .plugin_config_models import (
     RsshubPluginConfig,
 )
 from .runtime_settings import (
+    AiSummarySettings,
     ApplicationSettings,
     BasicSettings,
     FeedFetchSettings,
@@ -28,6 +29,7 @@ from .sender_strategy_models import (
 )
 
 __all__ = [
+    "AiSummarySettings",
     "ApplicationSettings",
     "BasicConfig",
     "BasicSettings",

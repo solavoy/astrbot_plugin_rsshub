@@ -108,8 +108,11 @@ export function createEmptyEditForm() {
     display_via: -100,
     display_title: -100,
     display_entry_tags: -100,
-    style: -100,
     display_media: -100,
+    list_id: 0,
+    feed_hostname: '',
+    include_keywords: '',
+    exclude_keywords: '',
   };
 }
 
@@ -134,8 +137,11 @@ export function createEditFormFromSub(sub) {
     display_via: sub.display_via ?? -100,
     display_title: sub.display_title ?? -100,
     display_entry_tags: sub.display_entry_tags ?? -100,
-    style: sub.style ?? -100,
     display_media: sub.display_media ?? -100,
+    list_id: sub.list_id || 0,
+    feed_hostname: sub.feed_hostname || '',
+    include_keywords: (sub.include_keywords || []).join(', '),
+    exclude_keywords: (sub.exclude_keywords || []).join(', '),
   };
 }
 
@@ -153,7 +159,6 @@ export function createEmptyUserEditForm() {
     display_via: -100,
     display_title: -100,
     display_entry_tags: -100,
-    style: -100,
     display_media: -100,
   };
 }
@@ -164,6 +169,25 @@ export function createEmptyFeedEditForm() {
     title: '',
     link: '',
     state: 1,
+  };
+}
+
+export function createEmptyListEditForm() {
+  return {
+    id: 0,
+    name: '',
+    user_id: '',
+    target_session: '',
+    platform_name: '',
+    state: 1,
+    batch_size: 10,
+    max_wait_minutes: 120,
+    content_mode: 'full',
+    full_delivery_mode: 'split',
+    ai_summary_enabled: false,
+    ai_summary_prompt: '',
+    include_keywords: '',
+    exclude_keywords: '',
   };
 }
 

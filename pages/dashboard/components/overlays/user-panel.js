@@ -24,7 +24,6 @@ export const userPanelTemplate = String.raw`
         <div class="setting-row"><span class="setting-label">显示来源</span><select class="select-input" v-model.number="userEditForm.display_via"><option :value="-100">继承</option><option :value="-2">完全禁用</option><option :value="-1">仅链接</option><option :value="0">自动</option><option :value="1">强制</option></select></div>
         <div class="setting-row"><span class="setting-label">显示标题</span><select class="select-input" v-model.number="userEditForm.display_title"><option :value="-100">继承</option><option :value="-1">禁用</option><option :value="0">自动</option><option :value="1">强制</option></select></div>
         <div class="setting-row"><span class="setting-label">显示标签</span><select class="select-input" v-model.number="userEditForm.display_entry_tags"><option :value="-100">继承</option><option :value="-1">禁用</option><option :value="0">启用</option></select></div>
-        <div class="setting-row"><span class="setting-label">排版策略</span><select class="select-input" v-model.number="userEditForm.style"><option :value="-100">继承</option><option :value="0">自动</option><option :value="1">RSSRT</option><option :value="2">原始顺序</option></select></div>
         <div class="setting-row"><span class="setting-label">显示媒体</span><select class="select-input" v-model.number="userEditForm.display_media"><option :value="-100">继承</option><option :value="-1">禁用</option><option :value="0">启用</option></select></div>
       </div>
       <div class="form-actions">

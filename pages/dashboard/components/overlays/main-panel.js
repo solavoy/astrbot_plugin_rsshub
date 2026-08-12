@@ -54,8 +54,14 @@ export const mainPanelTemplate = String.raw`
         <div class="setting-row"><span class="setting-label">显示来源</span><select class="select-input" v-model.number="editForm.display_via"><option :value="-100">继承</option><option :value="-2">完全禁用</option><option :value="-1">仅链接</option><option :value="0">自动</option><option :value="1">强制</option></select></div>
         <div class="setting-row"><span class="setting-label">显示标题</span><select class="select-input" v-model.number="editForm.display_title"><option :value="-100">继承</option><option :value="-1">禁用</option><option :value="0">自动</option><option :value="1">强制</option></select></div>
         <div class="setting-row"><span class="setting-label">显示标签</span><select class="select-input" v-model.number="editForm.display_entry_tags"><option :value="-100">继承</option><option :value="-1">禁用</option><option :value="0">启用</option></select></div>
-        <div class="setting-row"><span class="setting-label">排版策略</span><select class="select-input" v-model.number="editForm.style"><option :value="-100">继承</option><option :value="0">自动</option><option :value="1">RSSRT</option><option :value="2">原始顺序</option></select></div>
         <div class="setting-row"><span class="setting-label">显示媒体</span><select class="select-input" v-model.number="editForm.display_media"><option :value="-100">继承</option><option :value="-1">禁用</option><option :value="0">启用</option></select></div>
+      </div>
+      <div class="panel-section">
+        <h4>List 聚合</h4>
+        <div class="setting-row"><span class="setting-label">所属 List</span><select class="select-input" v-model.number="editForm.list_id"><option :value="0">无（即时推送）</option><option v-for="list in lists" :key="list.id" :value="list.id">{{ list.name }}</option></select></div>
+        <div class="setting-row" v-if="editForm.feed_hostname"><span class="setting-label">Feed 域名</span><span class="detail-value">{{ editForm.feed_hostname }}</span></div>
+        <div class="setting-row"><span class="setting-label">关注词</span><div class="input-wrapper"><input type="text" v-model="editForm.include_keywords" placeholder="逗号分隔，命中才推送" /></div></div>
+        <div class="setting-row"><span class="setting-label">屏蔽词</span><div class="input-wrapper"><input type="text" v-model="editForm.exclude_keywords" placeholder="逗号分隔，命中即过滤" /></div></div>
       </div>
       <div class="form-actions">
         <button type="button" class="btn btn-danger" :class="{ 'is-loading': isPending('sub:delete:' + editForm.id) }" :disabled="isPending('sub:delete:' + editForm.id)" @click="handleDeleteSub()">删除订阅</button>
@@ -75,6 +81,8 @@ export const mainPanelTemplate = String.raw`
         <div class="detail-row"><span class="detail-label">链接</span><span class="detail-value cell-wrap">{{ detailSub.feed_link }}</span></div>
         <div class="detail-row"><span class="detail-label">用户</span><span class="detail-value">{{ detailSub.user_id }}</span></div>
         <div class="detail-row"><span class="detail-label">目标</span><span class="detail-value">{{ detailSub.target_session || '默认' }}</span></div>
+        <div class="detail-row"><span class="detail-label">List</span><span class="detail-value">{{ listNameById(detailSub.list_id) || '无（即时推送）' }}</span></div>
+        <div class="detail-row"><span class="detail-label">Feed 域名</span><span class="detail-value">{{ detailSub.feed_hostname || '-' }}</span></div>
         <div class="detail-row"><span class="detail-label">间隔</span><span class="detail-value">{{ detailSub.interval || '默认' }} 分钟</span></div>
         <div class="detail-row"><span class="detail-label">标签</span><span class="detail-value">{{ detailSub.tags || '-' }}</span></div>
         <div class="detail-row"><span class="detail-label">创建时间</span><span class="detail-value">{{ formatDate(detailSub.created_at) }}</span></div>

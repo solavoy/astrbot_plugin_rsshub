@@ -128,6 +128,19 @@ class SubscriptionRepositoryImpl:
             orms = result.scalars().all()
             return [self._to_entity(orm) for orm in orms]
 
+    async def get_by_list(self, list_id: int) -> list[Subscription]:
+        """获取属于指定 List 的订阅"""
+        db = get_database()
+        async with db.get_session() as session:
+            stmt = (
+                select(SubORM)
+                .where(SubORM.list_id == list_id)
+                .order_by(asc(SubORM.id))
+            )
+            result = await session.execute(stmt)
+            orms = result.scalars().all()
+            return [self._to_entity(orm) for orm in orms]
+
     async def get_active_by_feed_id(self, feed_id: int) -> list[Subscription]:
         """获取指定Feed的所有启用订阅"""
         db = get_database()
@@ -232,8 +245,10 @@ class SubscriptionRepositoryImpl:
             display_via=orm.display_via,
             display_title=orm.display_title,
             display_entry_tags=orm.display_entry_tags,
-            style=orm.style,
             display_media=orm.display_media,
+            list_id=getattr(orm, "list_id", None),
+            include_keywords=list(getattr(orm, "include_keywords", None) or []),
+            exclude_keywords=list(getattr(orm, "exclude_keywords", None) or []),
             created_at=orm.created_at,
             updated_at=orm.updated_at,
         )
@@ -259,8 +274,10 @@ class SubscriptionRepositoryImpl:
             display_via=sub.display_via,
             display_title=sub.display_title,
             display_entry_tags=sub.display_entry_tags,
-            style=sub.style,
             display_media=sub.display_media,
+            list_id=sub.list_id,
+            include_keywords=sub.include_keywords or None,
+            exclude_keywords=sub.exclude_keywords or None,
             created_at=sub.created_at,
             updated_at=sub.updated_at,
         )

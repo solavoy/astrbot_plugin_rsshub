@@ -19,8 +19,6 @@ from astrbot_plugin_rsshub.src.domain.entities.content_types import (
 )
 from astrbot_plugin_rsshub.src.shared.constants import (
     SEND_MODE_LINK_ONLY,
-    STYLE_ORIGINAL,
-    STYLE_RSSRT,
 )
 
 
@@ -149,7 +147,6 @@ async def test_agent_xml_push_service_display_media_false_clears_dispatch_media(
         title="Hello",
         xml="<entry><p>World</p><img src='https://example.com/a.png'/></entry>",
         display_media=False,
-        style="rssrt",
     )
 
     assert result["ok"] is True
@@ -157,7 +154,6 @@ async def test_agent_xml_push_service_display_media_false_clears_dispatch_media(
     assert call["media_urls"] == []
     assert call["media_items"] == []
     assert call["layout"] == []
-    assert call["style"] == STYLE_RSSRT
     assert result["preview"]["media_urls"] == ["https://example.com/a.png"]
 
 
@@ -292,7 +288,6 @@ async def test_agent_xml_push_service_link_only_clears_media_and_converts_modes(
         xml="<entry><p>World</p><img src='https://example.com/a.png'/></entry>",
         link="https://example.com/post",
         send_mode="link_only",
-        style="original",
     )
 
     assert result["ok"] is True
@@ -302,7 +297,6 @@ async def test_agent_xml_push_service_link_only_clears_media_and_converts_modes(
     assert call["media_items"] == []
     assert call["layout"] == []
     assert call["send_mode"] == SEND_MODE_LINK_ONLY
-    assert call["style"] == STYLE_ORIGINAL
 
 
 @pytest.mark.asyncio

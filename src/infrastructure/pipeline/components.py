@@ -57,17 +57,13 @@ class MessageComponentSorter:
             "file": 3,
         }
 
-        onebot_like = platform in {"onebot", "onebot11", "onebotv11", "aiocqhttp"}
-
         def order(component: MessageComponent) -> tuple[int, int]:
-            if component.kind == "media":
-                return (media_order.get(component.media_type, 99), 0)
-            if component.kind == "tail" and onebot_like:
-                return (media_order.get(component.media_type, 99), 0)
             if component.kind == "text":
-                return (100, 0)
+                return (0, 0)
+            if component.kind == "media":
+                return (1, media_order.get(component.media_type, 99))
             if component.kind == "tail":
-                return (200, 0)
+                return (2, media_order.get(component.media_type, 99))
             return (300, 0)
 
         return sorted(components, key=order)
@@ -99,11 +95,15 @@ class MessageComponentSorter:
             return components
         from ..utils.media_dispatch import MediaDispatchResolver
 
+        seen_urls: set[str] = set()
         for item in prepared_media:
             if item.download_failed or item.oversize:
                 continue
             if not item.local_path and not item.original_url:
                 continue
+            if item.original_url in seen_urls:
+                continue
+            seen_urls.add(item.original_url)
             dispatch = MediaDispatchResolver.resolve_prepared(item)
             if not dispatch.media_type:
                 continue

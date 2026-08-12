@@ -121,7 +121,6 @@ class TestTOMLRoundtrip:
             display_via=0,
             display_title=1,
             display_entry_tags=1,
-            style=3,
             display_media=-1,
         )
 
@@ -144,7 +143,6 @@ class TestTOMLRoundtrip:
             "notify": 1,
             "platform_name": "telegram",
             "send_mode": 1,
-            "style": 3,
             "tags": "alerts,news",
             "title": "Configured",
         }
@@ -407,3 +405,20 @@ def test_subscription_model_dump_does_not_include_feed_relation() -> None:
 
     assert "feed" not in subscription.model_dump()
     assert not hasattr(subscription, "feed")
+
+
+def test_import_toml_with_style_reports_ignored() -> None:
+    from astrbot_plugin_rsshub.src.application.services.subscription_serializer import (
+        parse_subscriptions_toml,
+    )
+
+    content = (
+        "[[subscriptions]]\n"
+        "link='https://example.com/feed.xml'\n"
+        "style=2\n"
+    )
+    payload = parse_subscriptions_toml(content)
+
+    assert payload.errors == []
+    assert any("style" in w and "已移除" in w for w in payload.warnings)
+    assert "style" not in payload.records[0].options

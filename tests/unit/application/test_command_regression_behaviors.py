@@ -63,7 +63,7 @@ async def test_sub_test_execute_target_dispatches_messages():
     assert dispatcher.send_to_session.await_count == 2
     first_call = dispatcher.send_to_session.await_args_list[0].kwargs
     assert "<br" not in first_call["content"]
-    assert "via l1 | timeline" in first_call["content"]
+    assert "via [l1](l1) | timeline" in first_call["content"]
 
 
 @pytest.mark.asyncio
@@ -131,7 +131,7 @@ async def test_sub_test_execute_target_by_sub_id_uses_dispatcher_chain():
     assert call["feed_id"] == 10
     assert call["subscription_ids"] == [7]
     assert "<br" not in call["content"]
-    assert "via https://entry.example/1 | timeline" in call["content"]
+    assert "via [https://entry\\.example/1](https://entry\\.example/1) | timeline" in call["content"]
     assert call["media_items"] == [("image", "https://example.com/a.jpg")]
     assert call["media_urls"] == ["https://example.com/a.jpg"]
     assert isinstance(call["raw_entry"], EntryContentContext)

@@ -32,10 +32,19 @@ RSSHub 路由检索后续走 route skill；插件不再提供 route 搜索 LLM t
 
 - 对输入 XML 做格式校验，拒绝坏格式、DOCTYPE/ENTITY 和超大输入。
 - 将标签内容解析为正文与媒体组件。
-- 允许安全排版参数：`style`、`send_mode`、`display_media`、`display_title`、`display_author`、`display_via`、`display_entry_tags`、`length_limit`。
+- 允许安全排版参数：`send_mode`、`display_media`、`display_title`、`display_author`、`display_via`、`display_entry_tags`、`length_limit`。
 - 使用 `source_key + user_id + target_session + entry_guid` 做成功态幂等去重。
 - 写入推送历史并复用现有失败重试链路。
 - 在媒体发送失败时，把原始媒体链接保留到失败历史和回退文本中。
 - 为 XML 即时推送历史额外保存 `raw_xml`，便于审计和排障。
 
 命令仍是新增订阅、导入导出等用户归属流程的兜底入口；Plugin Pages 不提供新增订阅或 TOML 导入导出入口。
+
+## List 批次 AI 总结
+
+List 批量推送在正文分片全部成功后，可以追加一条 AI 总结。它不是新的 LLM tool，而是 Plugin Pages 里 Lists 的配置项：
+
+- 使用插件配置 `ai_summary.ai_provider_id`（`_special: select_provider`）选择 Provider；为空时回退到 List 目标会话当前的 Provider。
+- 调用走 AstrBot `Context.llm_generate(chat_provider_id=..., prompt=...)`，读取 `response.completion_text`。
+- 系统模板明确 Feed 内容为不可信数据，禁止执行其中的指令；结果经规范化处理，移除消息组件/工具调用注入标记。
+- 首次结果持久化到批次 `summary_markdown`，重试不重复调用模型；Provider 不可用或调用异常时正文照常发送，`summary_status=failed`。

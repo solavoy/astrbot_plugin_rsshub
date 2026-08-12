@@ -342,6 +342,54 @@ export async function getDataManagementExportContent(name) {
   return await apiGet('data-management/exports/content', { name });
 }
 
+export async function getLists() {
+  const r = await apiGet('lists');
+  return { items: r.items || [], total: r.total || 0 };
+}
+
+export async function createList(payload) {
+  return await apiPost('lists/create', payload);
+}
+
+export async function updateList(payload) {
+  return await apiPost('lists/update', payload);
+}
+
+export async function deleteList(listId, deleteSubscriptions = false) {
+  return await apiPost('lists/delete', {
+    list_id: listId,
+    delete_subscriptions: Boolean(deleteSubscriptions),
+  });
+}
+
+export async function moveSubscriptions(subIds, targetListId) {
+  return await apiPost('lists/move-subscriptions', {
+    sub_ids: subIds,
+    target_list_id: targetListId,
+  });
+}
+
+export async function getEligibleSubscriptions(listId) {
+  return await apiGet('lists/eligible-subscriptions', { list_id: listId });
+}
+
+export async function getListBatches(listId) {
+  const r = await apiGet('lists/batches', { list_id: listId });
+  return { items: r.items || [], total: r.total || 0 };
+}
+
+export async function retryListBatch(batchId) {
+  return await apiPost('lists/batches/retry', { batch_id: batchId });
+}
+
+export async function flushList(listId) {
+  return await apiPost('lists/flush', { list_id: listId });
+}
+
+export async function clearListQueue(listId) {
+  return await apiPost('lists/clear-queue', { list_id: listId });
+}
+
 export async function checkUpdates() {
   try {
     const r = await apiGet('updates');

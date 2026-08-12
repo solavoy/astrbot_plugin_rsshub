@@ -23,7 +23,6 @@ from ....shared.constants import (
     QQ_OFFICIAL_DEGRADE_STRATEGY_OPTIONS,
     QQ_OFFICIAL_MEDIA_THRESHOLD_DEFAULT,
     QQ_OFFICIAL_PLATFORMS,
-    STYLE_ORIGINAL,
     TELEGRAM_PHOTO_MAX_BYTES,
 )
 from ...pipeline import MessageComponent, MessageFormatter
@@ -791,6 +790,9 @@ class DefaultMessageSender:
             if failed_urls is not None
             else self._collect_failed_urls(prepared_media or [])
         )
+        effective_platform = (
+            platform if platform is not None else (context.platform_name if context else "")
+        )
         components = self._formatter.build_components(
             prepared_media=prepared_media,
             text=self._message_with_unavailable_generated_fallbacks(
@@ -798,11 +800,34 @@ class DefaultMessageSender:
                 prepared_media,
             ),
             failed_urls=effective_failed_urls,
-            platform=platform
-            if platform is not None
-            else (context.platform_name if context else ""),
+            platform=effective_platform,
         )
+        components = self._degrade_markdown_for_platform(components, effective_platform)
         return self._attach_generated_fallbacks(components, request)
+
+    @classmethod
+    def _degrade_markdown_for_platform(
+        cls,
+        components: list[MessageComponent],
+        platform: str,
+    ) -> list[MessageComponent]:
+        """非 Markdown 渲染平台把规范 Markdown 正文降级为可读纯文本。
+
+        Telegram 原生渲染 MarkdownV2；其余平台（OneBot / QQ 官方 / 微信 /
+        默认 sender）在发送边界还原 Markdown 语法，避免原文直接暴露。
+        """
+        from ...pipeline.entry_formatter import EntryTextFormatter
+        from ...pipeline.markdown_plain import markdown_to_plain
+
+        if EntryTextFormatter.should_render_markdown(platform):
+            return components
+        degraded: list[MessageComponent] = []
+        for component in components:
+            if component.kind == "text" and component.text:
+                degraded.append(replace(component, text=markdown_to_plain(component.text)))
+            else:
+                degraded.append(component)
+        return degraded
 
     @staticmethod
     def _is_media_component(component: MessageComponent) -> bool:
@@ -1089,10 +1114,6 @@ class DefaultMessageSender:
             return retry_result
         return failed_result
 
-    @staticmethod
-    def _is_original_style(context: MessageContext | None) -> bool:
-        return int(getattr(context, "style", 0) or 0) == STYLE_ORIGINAL
-
     def _layout_to_components(
         self,
         request: SendRequest,
@@ -1278,140 +1299,6 @@ class DefaultMessageSender:
             and self._counts_degraded_media_delivery_as_success(platform)
         ):
             return SendResult(ok=True)
-        return self._partial_send_result(failures)
-
-    async def _send_components_in_order(
-        self,
-        session_id: str,
-        components: list[MessageComponent],
-        *,
-        combine_image_text: bool,
-        default_text: str = "",
-        use_markdown: bool | None = None,
-        prepared_media_by_url: dict[str, PreparedMedia] | None = None,
-        platform: str | None = None,
-    ) -> SendResult:
-        failures: list[SendResult] = []
-        failed_urls: list[str] = []
-        failed_fallbacks: list[str] = []
-        pending_image: MessageComponent | None = None
-        sent_any = False
-
-        async def send_component(component: MessageComponent) -> None:
-            nonlocal sent_any
-            chain = self._component_to_chain(component)
-            if not chain:
-                return
-            sent_any = True
-            result = await self._send_chain(
-                session_id,
-                chain,
-                use_markdown=use_markdown,
-            )
-            if not result.ok:
-                self._merge_send_failure(
-                    failures,
-                    result,
-                    stage=f"send_{component.media_type or component.kind}",
-                )
-                if self._is_media_component(component):
-                    fallback = await self._send_component_fallback_candidates(
-                        session_id,
-                        component,
-                        prepared_media_by_url=prepared_media_by_url,
-                        platform=platform,
-                        skip_first_file=component.file,
-                        use_markdown=use_markdown,
-                    )
-                    failures.extend(fallback.failures)
-                    if not fallback.ok:
-                        self._record_failed_media_fallback(
-                            failed_urls,
-                            failed_fallbacks,
-                            component,
-                        )
-
-        async def flush_pending_image() -> None:
-            nonlocal pending_image
-            if pending_image is not None:
-                await send_component(pending_image)
-                pending_image = None
-
-        for component in components:
-            if (
-                combine_image_text
-                and component.kind == "media"
-                and component.media_type == "image"
-            ):
-                await flush_pending_image()
-                pending_image = component
-                continue
-
-            if (
-                combine_image_text
-                and component.kind == "text"
-                and pending_image is not None
-            ):
-                paired_image = pending_image
-                chain = self._chain_from_components([paired_image, component])
-                pending_image = None
-                if chain:
-                    sent_any = True
-                    result = await self._send_chain(
-                        session_id,
-                        chain,
-                        use_markdown=use_markdown,
-                    )
-                    if not result.ok:
-                        self._merge_send_failure(
-                            failures,
-                            result,
-                            stage="send_image_text",
-                        )
-                        fallback = await self._send_component_fallback_candidates(
-                            session_id,
-                            paired_image,
-                            prepared_media_by_url=prepared_media_by_url,
-                            platform=platform,
-                            skip_first_file=paired_image.file,
-                            use_markdown=use_markdown,
-                        )
-                        failures.extend(fallback.failures)
-                        if not fallback.ok:
-                            self._record_failed_media_fallback(
-                                failed_urls,
-                                failed_fallbacks,
-                                paired_image,
-                            )
-                continue
-
-            await flush_pending_image()
-            await send_component(component)
-
-        await flush_pending_image()
-        if not sent_any and default_text:
-            from astrbot.api.message_components import Plain
-
-            result = await self._send_chain(
-                session_id,
-                [Plain(default_text)],
-                use_markdown=use_markdown,
-            )
-            self._merge_send_failure(failures, result, stage="send_text")
-        elif not sent_any:
-            return SendResult(ok=False, detail="empty_message")
-
-        fallback_text = self._append_text_fallbacks("", failed_fallbacks)
-        fallback_text = self._append_failed_links(fallback_text, failed_urls)
-        if fallback_text:
-            from astrbot.api.message_components import Plain
-
-            result = await self._send_chain(
-                session_id,
-                [Plain(fallback_text)],
-                use_markdown=use_markdown,
-            )
-            self._merge_send_failure(failures, result, stage="send_text_fallback")
         return self._partial_send_result(failures)
 
     @locked("'global_web'")

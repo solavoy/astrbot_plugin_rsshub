@@ -14,6 +14,7 @@ import { settingsModule } from './modules/settings.js';
 import { dataManagementModule } from './modules/data-management.js';
 import { panelsModule } from './modules/panels.js';
 import { overlayModule } from './modules/overlays.js';
+import { listsModule } from './modules/lists.js';
 
 export function createDashboardStore(PetiteVue) {
   return PetiteVue.reactive({
@@ -31,6 +32,7 @@ export function createDashboardStore(PetiteVue) {
     ...dataManagementModule,
     ...panelsModule,
     ...overlayModule,
+    ...listsModule,
     formatDate,
     formatUserState,
     formatBytes,

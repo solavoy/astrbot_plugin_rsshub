@@ -62,6 +62,7 @@ export const subscriptionsPageTemplate = String.raw`
                 <td class="col-user cell-mono" data-label="用户" :title="sub.user_id">{{ sub.user_id }}</td>
                 <td class="col-interval" data-label="间隔">{{ sub.interval > 0 ? sub.interval + ' 分钟' : '继承' }}</td>
                 <td class="col-session cell-mono" data-label="目标" :title="sub.target_session">{{ sub.target_session || '-' }}</td>
+                <td class="col-feed" data-label="List"><span v-if="sub.list_id" class="status-badge active">{{ listNameById(sub.list_id) }}</span><span v-else class="muted">-</span></td>
                 <td class="col-actions" data-label="操作"><div class="action-cell"><button class="btn btn-text btn-action" :class="{ 'is-loading': isPending('sub:panel-edit:' + sub.id) }" :disabled="isPending('sub:panel-edit:' + sub.id)" @click.stop="openEditPanel(sub)" title="编辑">编辑</button><button class="btn btn-text btn-action" :class="{ 'is-loading': isPending('feed:refresh:' + sub.feed_id) }" :disabled="isPending('feed:refresh:' + sub.feed_id)" @click.stop="handleRefreshDetail(sub.feed_id)" title="刷新">刷新</button></div></td>
               </tr>
             </tbody>

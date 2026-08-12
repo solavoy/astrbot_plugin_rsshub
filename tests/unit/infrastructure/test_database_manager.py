@@ -277,6 +277,8 @@ async def test_migration_runner_only_discovers_current_baseline_migration():
         (1, "V1_init"),
         (2, "V2_drop_link_preview"),
         (3, "V3_drop_handler_columns"),
+        (4, "V4_drop_style_columns"),
+        (5, "V5_create_list_batching"),
     ]
 
 
@@ -286,7 +288,7 @@ async def test_v1_current_baseline_has_expected_core_columns_and_index():
     async with engine.begin() as conn:
         executed = await MigrationRunner().run_all(conn)
 
-        assert executed == [1, 2, 3]
+        assert executed == [1, 2, 3, 4, 5]
 
         sub_columns = {
             str(row[1])
@@ -322,5 +324,110 @@ async def test_v1_current_baseline_has_expected_core_columns_and_index():
             history_columns
         )
         assert "idx_rsshub_push_history_scope_guid" in indexes
+        # V5 扩展
+        assert {"list_id", "include_keywords", "exclude_keywords"}.issubset(
+            sub_columns
+        )
+        tables = {
+            str(row[0])
+            for row in (
+                await conn.exec_driver_sql(
+                    "SELECT name FROM sqlite_master WHERE type='table'"
+                )
+            ).fetchall()
+        }
+        for t in (
+            "rsshub_lists",
+            "rsshub_list_queue_items",
+            "rsshub_list_batches",
+            "rsshub_list_batch_parts",
+            "rsshub_list_batch_part_items",
+        ):
+            assert t in tables
 
+    await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_v4_migration_drops_style_columns_idempotently():
+    from astrbot_plugin_rsshub.src.infrastructure.persistence.migrations import (
+        V4_drop_style_columns,
+    )
+
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    async with engine.begin() as conn:
+        await conn.exec_driver_sql(
+            "CREATE TABLE rsshub_sub (id INTEGER PRIMARY KEY, style INTEGER)"
+        )
+        await conn.exec_driver_sql(
+            "CREATE TABLE rsshub_user (id TEXT PRIMARY KEY, style INTEGER)"
+        )
+        await V4_drop_style_columns(conn)
+        sub_cols = {
+            str(row[1])
+            for row in (
+                await conn.exec_driver_sql("PRAGMA table_info(rsshub_sub)")
+            ).fetchall()
+        }
+        user_cols = {
+            str(row[1])
+            for row in (
+                await conn.exec_driver_sql("PRAGMA table_info(rsshub_user)")
+            ).fetchall()
+        }
+        assert "style" not in sub_cols
+        assert "style" not in user_cols
+        # 幂等：再次执行不报错
+        await V4_drop_style_columns(conn)
+    await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_v5_migration_creates_list_tables_and_sub_columns():
+    from astrbot_plugin_rsshub.src.infrastructure.persistence.migrations import (
+        V5_create_list_batching,
+    )
+
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    async with engine.begin() as conn:
+        await conn.exec_driver_sql(
+            "CREATE TABLE rsshub_sub (id INTEGER PRIMARY KEY, user_id TEXT, feed_id INTEGER)"
+        )
+        await V5_create_list_batching(conn)
+        tables = [
+            str(row[0])
+            for row in (
+                await conn.exec_driver_sql(
+                    "SELECT name FROM sqlite_master WHERE type='table'"
+                )
+            ).fetchall()
+        ]
+        for t in (
+            "rsshub_lists",
+            "rsshub_list_queue_items",
+            "rsshub_list_batches",
+            "rsshub_list_batch_parts",
+            "rsshub_list_batch_part_items",
+        ):
+            assert t in tables, f"缺少表 {t}"
+        cols = {
+            str(row[1])
+            for row in (
+                await conn.exec_driver_sql("PRAGMA table_info(rsshub_sub)")
+            ).fetchall()
+        }
+        assert "list_id" in cols
+        assert "include_keywords" in cols
+        assert "exclude_keywords" in cols
+        # 幂等：再次执行不报错、不重复建表
+        await V5_create_list_batching(conn)
+        tables_after = [
+            str(row[0])
+            for row in (
+                await conn.exec_driver_sql(
+                    "SELECT name FROM sqlite_master WHERE type='table'"
+                )
+            ).fetchall()
+        ]
+        assert tables_after.count("rsshub_lists") == 1
     await engine.dispose()

@@ -278,9 +278,9 @@ async def test_qq_official_single_image_and_text_share_one_chain(monkeypatch):
 
     assert result.ok is True
     assert len(calls) == 1
-    assert isinstance(calls[0][0], _Image)
-    assert isinstance(calls[0][1], _Plain)
-    assert calls[0][1].text == "entry text"
+    assert isinstance(calls[0][0], _Plain)
+    assert calls[0][0].text == "entry text"
+    assert isinstance(calls[0][1], _Image)
 
 
 @pytest.mark.asyncio
@@ -470,7 +470,7 @@ async def test_qq_official_single_video_failure_can_fail_without_fallback(
 
 
 @pytest.mark.asyncio
-async def test_qq_official_original_style_pairs_image_with_following_text(monkeypatch):
+async def test_qq_official_ignores_layout_and_sends_message(monkeypatch):
     _patch_components(monkeypatch)
     DefaultMessageSender.configure_behavior(qq_official_media_threshold=0)
     sender = QQOfficialMessageSender()
@@ -505,19 +505,13 @@ async def test_qq_official_original_style_pairs_image_with_following_text(monkey
     )
 
     assert result.ok is True
-    assert len(calls) == 3
-    assert isinstance(calls[0][0], _Image)
-    assert isinstance(calls[0][1], _Plain)
-    assert calls[0][1].text == "caption 1"
-    assert isinstance(calls[1][0], _Video)
-    assert isinstance(calls[2][0], _Plain)
-    assert calls[2][0].text == "caption 2"
+    assert len(calls) == 1
+    assert isinstance(calls[0][0], _Plain)
+    assert calls[0][0].text == "fallback"
 
 
 @pytest.mark.asyncio
-async def test_qq_official_original_style_single_video_uses_video_then_fallback(
-    monkeypatch,
-):
+async def test_qq_official_single_video_failure_tries_file_then_link(monkeypatch):
     _patch_components(monkeypatch)
     DefaultMessageSender.configure_behavior(
         qq_official_degrade_strategy="file_then_link",
@@ -527,7 +521,7 @@ async def test_qq_official_original_style_single_video_uses_video_then_fallback(
 
     async def fake_send_chain(session_id: str, chain: list, **kwargs):
         calls.append(chain)
-        if isinstance(chain[0], _Video):
+        if any(isinstance(item, _Video) for item in chain):
             return SendResult(ok=False, transient=True, detail="video failed")
         return SendResult(ok=True)
 
@@ -560,7 +554,7 @@ async def test_qq_official_original_style_single_video_uses_video_then_fallback(
     assert [type(chain[0]) for chain in calls] == [_Video, _File, _Plain]
     assert calls[0][0].file == "/tmp/2.mp4"
     assert calls[1][0].file == "/tmp/2.mp4"
-    assert calls[2][0].text == "caption"
+    assert calls[2][0].text == "fallback"
 
 
 @pytest.mark.asyncio
@@ -602,16 +596,9 @@ async def test_qq_official_original_style_file_fragment_uses_file_component(
     )
 
     assert result.ok is True
-    assert len(calls) == 3
-    assert isinstance(calls[0][0], _Image)
-    assert isinstance(calls[0][1], _Plain)
-    assert isinstance(calls[1][0], _File)
-    assert not isinstance(calls[1][0], _Image)
-    assert calls[1][0].file == "https://example.com/report.pdf"
-    assert calls[1][0].url == "https://example.com/report.pdf"
-    assert calls[1][0].name == "report.pdf"
-    assert isinstance(calls[2][0], _Plain)
-    assert calls[2][0].text == "after file"
+    assert len(calls) == 1
+    assert isinstance(calls[0][0], _Plain)
+    assert calls[0][0].text == "fallback"
 
 
 @pytest.mark.asyncio
@@ -657,7 +644,7 @@ async def test_qq_official_single_image_failure_tries_file_then_link(monkeypatch
 
     async def fake_send_chain(session_id: str, chain: list, **kwargs):
         calls.append(chain)
-        if isinstance(chain[0], _Image):
+        if any(isinstance(item, _Image) for item in chain):
             return SendResult(ok=False, transient=True, detail="image failed")
         return SendResult(ok=True)
 
@@ -679,7 +666,7 @@ async def test_qq_official_single_image_failure_tries_file_then_link(monkeypatch
     )
 
     assert result.ok is True
-    assert [type(chain[0]) for chain in calls] == [_Image, _File, _Plain]
+    assert [type(chain[0]) for chain in calls] == [_Plain, _File, _Plain]
     assert calls[1][0].file == "/tmp/1.jpg"
     assert calls[2][0].text == "entry text"
 
@@ -695,7 +682,7 @@ async def test_qq_official_single_image_failure_can_link_only(monkeypatch):
 
     async def fake_send_chain(session_id: str, chain: list, **kwargs):
         calls.append(chain)
-        if isinstance(chain[0], _Image):
+        if any(isinstance(item, _Image) for item in chain):
             return SendResult(ok=False, transient=True, detail="image failed")
         return SendResult(ok=True)
 
@@ -717,7 +704,7 @@ async def test_qq_official_single_image_failure_can_link_only(monkeypatch):
     )
 
     assert result.ok is True
-    assert [type(chain[0]) for chain in calls] == [_Image, _Plain]
+    assert [type(chain[0]) for chain in calls] == [_Plain, _Plain]
     assert "媒体原始链接:" in calls[-1][0].text
     assert "https://example.com/1.jpg" in calls[-1][0].text
 
@@ -844,7 +831,8 @@ async def test_qq_official_original_style_multimedia_threshold_still_degrades(
     assert [type(chain[0]) for chain in calls] == [_File, _File, _Plain]
     assert calls[0][0].file == "/tmp/1.jpg"
     assert calls[1][0].file == "/tmp/2.mp4"
-    assert calls[-1][0].text == "caption 1\ncaption 2"
+    # original layout 已移除：正文统一为 message
+    assert calls[-1][0].text == "fallback"
 
 
 @pytest.mark.asyncio
@@ -925,7 +913,7 @@ async def test_weixin_oc_multimedia_is_sent_one_by_one(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_weixin_oc_original_style_preserves_order_without_combining(monkeypatch):
+async def test_weixin_oc_ignores_layout_and_sends_message(monkeypatch):
     _patch_components(monkeypatch)
     sender = WeixinOCMessageSender()
     calls: list[list] = []
@@ -954,9 +942,9 @@ async def test_weixin_oc_original_style_preserves_order_without_combining(monkey
     )
 
     assert result.ok is True
-    assert len(calls) == 3
-    assert [type(chain[0]) for chain in calls] == [_Plain, _Image, _Plain]
-    assert all(len(chain) == 1 for chain in calls)
+    assert len(calls) == 1
+    assert isinstance(calls[0][0], _Plain)
+    assert calls[0][0].text == "fallback"
 
 
 @pytest.mark.asyncio
@@ -1172,9 +1160,9 @@ async def test_qq_official_gif_from_video_counts_as_single_image_with_text(monke
 
     assert result.ok is True
     assert len(calls) == 1
-    assert isinstance(calls[0][0], _Image)
-    assert isinstance(calls[0][1], _Plain)
-    assert calls[0][1].text == "entry text"
+    assert isinstance(calls[0][0], _Plain)
+    assert calls[0][0].text == "entry text"
+    assert isinstance(calls[0][1], _Image)
 
 
 @pytest.mark.asyncio
@@ -1188,12 +1176,11 @@ async def test_qq_official_gif_failure_tries_compressed_then_original_video(
 
     async def fake_send_chain(session_id: str, chain: list, **kwargs):
         calls.append(chain)
-        first = chain[0]
-        if isinstance(first, _Image):
+        if any(isinstance(item, _Image) for item in chain):
             return SendResult(
                 ok=False, transient=False, detail="413 Request Entity Too Large"
             )
-        if isinstance(first, _Video):
+        if any(isinstance(item, _Video) for item in chain):
             return SendResult(ok=True)
         return SendResult(ok=True)
 
@@ -1239,8 +1226,11 @@ async def test_qq_official_gif_failure_tries_compressed_then_original_video(
     )
 
     assert result.ok is True
-    assert isinstance(calls[0][0], _Image)
-    assert calls[0][0].file == "/tmp/video-small.gif"
+    # 合链顺序：正文在前，媒体在后
+    assert isinstance(calls[0][0], _Plain)
+    assert calls[0][0].text == "entry text"
+    assert isinstance(calls[0][1], _Image)
+    assert calls[0][1].file == "/tmp/video-small.gif"
     assert isinstance(calls[1][0], _Video)
     assert calls[1][0].file == "/tmp/video.mp4"
     assert isinstance(calls[-1][0], _Plain)
@@ -1385,9 +1375,9 @@ async def test_qq_official_original_style_gif_from_layout_matches_prepared(monke
 
     assert result.ok is True
     assert len(calls) == 1
-    assert isinstance(calls[0][0], _Image)
-    assert isinstance(calls[0][1], _Plain)
-    assert calls[0][1].text == "caption"
+    assert isinstance(calls[0][0], _Plain)
+    assert calls[0][0].text == "fallback"
+    assert isinstance(calls[0][1], _Image)
 
 
 @pytest.mark.asyncio
@@ -1433,6 +1423,6 @@ async def test_qq_official_original_style_gif_from_downloaded_media(monkeypatch)
 
     assert result.ok is True
     assert len(calls) == 1
-    assert isinstance(calls[0][0], _Image)
-    assert calls[0][0].file == "/tmp/video.gif"
-    assert isinstance(calls[0][1], _Plain)
+    assert isinstance(calls[0][0], _Plain)
+    assert isinstance(calls[0][1], _Image)
+    assert calls[0][1].file == "/tmp/video.gif"

@@ -548,3 +548,88 @@ class TestTestSubscriptionCommand:
             "https://example.com/rss.xml",
             verbose=True,
         )
+
+
+class TestUpdateSubscriptionListFields:
+    @pytest.mark.asyncio
+    async def test_update_subscription_accepts_list_and_keywords(self):
+        from unittest.mock import AsyncMock
+
+        from astrbot_plugin_rsshub.src.application.commands.update_subscription_cmd import (
+            UpdateSubscriptionCommand,
+        )
+        from astrbot_plugin_rsshub.src.domain.entities.list_entities import ListEntity
+        from astrbot_plugin_rsshub.src.domain.entities.subscription import Subscription
+
+        repo = AsyncMock()
+        repo.get_by_id.return_value = Subscription(
+            id=1, user_id="u1", feed_id=1,
+            target_session="s1", platform_name="telegram",
+        )
+        repo.update_options.return_value = Subscription(
+            id=1, user_id="u1", feed_id=1,
+            target_session="s1", platform_name="telegram",
+        )
+        list_repo = AsyncMock()
+        list_repo.get_list.return_value = ListEntity(
+            id=5, name="Tech", user_id="u1",
+            target_session="s1", platform_name="telegram",
+        )
+        cmd = UpdateSubscriptionCommand(repo, list_repo=list_repo)
+        result = await cmd.execute(
+            sub_id=1, user_id="u1",
+            list_id=5,
+            include_keywords=["Python", "python"],
+            exclude_keywords=["广告"],
+        )
+        assert result.success is True
+        kwargs = repo.update_options.await_args.kwargs
+        assert kwargs["list_id"] == 5
+        assert kwargs["include_keywords"] == ["python"]
+        assert kwargs["exclude_keywords"] == ["广告"]
+
+    @pytest.mark.asyncio
+    async def test_update_subscription_rejects_cross_scope_list(self):
+        from unittest.mock import AsyncMock
+
+        from astrbot_plugin_rsshub.src.application.commands.update_subscription_cmd import (
+            UpdateSubscriptionCommand,
+        )
+        from astrbot_plugin_rsshub.src.domain.entities.list_entities import ListEntity
+        from astrbot_plugin_rsshub.src.domain.entities.subscription import Subscription
+
+        repo = AsyncMock()
+        repo.get_by_id.return_value = Subscription(
+            id=1, user_id="u1", feed_id=1,
+            target_session="s1", platform_name="telegram",
+        )
+        list_repo = AsyncMock()
+        list_repo.get_list.return_value = ListEntity(
+            id=5, name="News", user_id="u2",
+            target_session="s2", platform_name="telegram",
+        )
+        cmd = UpdateSubscriptionCommand(repo, list_repo=list_repo)
+        result = await cmd.execute(sub_id=1, user_id="u1", list_id=5)
+        assert result.success is False
+        assert "归属" in result.message
+        repo.update_options.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_update_subscription_list_id_zero_removes_list(self):
+        from unittest.mock import AsyncMock
+
+        from astrbot_plugin_rsshub.src.application.commands.update_subscription_cmd import (
+            UpdateSubscriptionCommand,
+        )
+        from astrbot_plugin_rsshub.src.domain.entities.subscription import Subscription
+
+        repo = AsyncMock()
+        repo.update_options.return_value = Subscription(
+            id=1, user_id="u1", feed_id=1,
+            target_session="s1", platform_name="telegram",
+        )
+        cmd = UpdateSubscriptionCommand(repo, list_repo=None)
+        result = await cmd.execute(sub_id=1, user_id="u1", list_id=0)
+        assert result.success is True
+        kwargs = repo.update_options.await_args.kwargs
+        assert kwargs["list_id"] is None

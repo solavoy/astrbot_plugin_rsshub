@@ -1024,3 +1024,26 @@ async def test_platform_senders_clean_self_prepared_owned_paths(
     if sender_cls is not OneBotMessageSender:
         assert result.ok is True
     assert not owned.exists()
+
+
+def test_degrade_markdown_for_platform_keeps_telegram_and_strips_others():
+    from astrbot_plugin_rsshub.src.infrastructure.pipeline import MessageComponent
+    from astrbot_plugin_rsshub.src.infrastructure.messaging.senders.base_sender import (
+        DefaultMessageSender,
+    )
+
+    markdown_components = [
+        MessageComponent(kind="text", text="**标题**\n\n---\n\n正文 [链接](https://e.com/x)"),
+    ]
+
+    tg = DefaultMessageSender._degrade_markdown_for_platform(
+        list(markdown_components), "telegram"
+    )
+    assert tg[0].text == "**标题**\n\n---\n\n正文 [链接](https://e.com/x)"
+
+    ob = DefaultMessageSender._degrade_markdown_for_platform(
+        list(markdown_components), "onebot"
+    )
+    assert "**" not in ob[0].text
+    assert "---" not in ob[0].text
+    assert "链接 (https://e.com/x)" in ob[0].text

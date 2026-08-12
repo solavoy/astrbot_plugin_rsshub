@@ -13,7 +13,6 @@ export const settingsPageTemplate = String.raw`
               <div class="setting-row"><span class="setting-label">默认显示来源</span><select class="select-input" v-model="subscriptionDefaults.display_via"><option value="完全禁用">完全禁用</option><option value="仅链接">仅链接</option><option value="自动">自动</option><option value="强制">强制</option></select></div>
               <div class="setting-row"><span class="setting-label">默认显示标题</span><select class="select-input" v-model="subscriptionDefaults.display_title"><option value="禁用">禁用</option><option value="自动">自动</option><option value="强制">强制</option></select></div>
               <div class="setting-row"><span class="setting-label">默认显示标签</span><label class="toggle-switch"><input type="checkbox" v-model="subscriptionDefaults.display_entry_tags" /><span class="toggle-slider"></span></label></div>
-              <div class="setting-row"><span class="setting-label">默认排版策略</span><select class="select-input" v-model="subscriptionDefaults.style"><option value="auto">自动</option><option value="rssrt">RSSRT</option><option value="original">原始顺序</option></select></div>
               <div class="setting-row"><span class="setting-label">默认显示媒体</span><label class="toggle-switch"><input type="checkbox" v-model="subscriptionDefaults.display_media" /><span class="toggle-slider"></span></label></div>
             </div>
             <div class="form-actions">

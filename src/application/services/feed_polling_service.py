@@ -744,7 +744,12 @@ class FeedPollingService:
         pending = int(stats.get("pending", 0) or 0)
         success = int(stats.get("success", 0) or 0)
         skipped = int(stats.get("skipped", 0) or 0)
-        return failed == 0 and pending == 0 and (success + skipped) > 0
+        durably_queued = int(stats.get("durably_queued", 0) or 0)
+        return (
+            failed == 0
+            and pending == 0
+            and (success + skipped + durably_queued) > 0
+        )
 
     @staticmethod
     def _format_dispatch_content(

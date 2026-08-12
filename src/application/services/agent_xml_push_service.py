@@ -26,9 +26,6 @@ from ...shared.constants import (
     SEND_MODE_AUTO,
     SEND_MODE_DIRECT,
     SEND_MODE_LINK_ONLY,
-    STYLE_AUTO,
-    STYLE_ORIGINAL,
-    STYLE_RSSRT,
 )
 from .feed_polling_service import FeedPollingService
 from .html_parser import HTMLParser
@@ -71,7 +68,7 @@ class AgentXmlPushOptions:
     """Per-call formatting overrides for agent XML pushes."""
 
     send_mode: int = SEND_MODE_AUTO
-    style: int = STYLE_AUTO
+    style: int = 0
     format_options: EffectivePushOptions = EffectivePushOptions()
 
 
@@ -186,6 +183,9 @@ def _resolve_push_options(
     display_entry_tags: Any = None,
     length_limit: Any = None,
 ) -> AgentXmlPushOptions:
+    # 排版策略已移除：旧调用传入 style 时明确拒绝，不静默改变语义。
+    if style not in (None, "", "auto", "classic"):
+        raise AgentXmlValidationError("style 参数已移除，请移除该参数后重试")
     send_mode_value = _parse_mapped_int(
         send_mode,
         mapping={
@@ -200,18 +200,6 @@ def _resolve_push_options(
         },
         allowed={SEND_MODE_LINK_ONLY, SEND_MODE_AUTO, SEND_MODE_DIRECT},
         fallback=SEND_MODE_AUTO,
-    )
-    style_value = _parse_mapped_int(
-        style,
-        mapping={
-            "auto": STYLE_AUTO,
-            "classic": STYLE_AUTO,
-            "rsstt": STYLE_AUTO,
-            "rssrt": STYLE_RSSRT,
-            "original": STYLE_ORIGINAL,
-        },
-        allowed={STYLE_AUTO, STYLE_RSSRT, STYLE_ORIGINAL},
-        fallback=STYLE_AUTO,
     )
     display_toggle_mapping = {
         "disabled": DISPLAY_DISABLED,
@@ -260,7 +248,7 @@ def _resolve_push_options(
     length_limit_value = max(0, _coerce_int(length_limit, fallback=0))
     return AgentXmlPushOptions(
         send_mode=send_mode_value,
-        style=style_value,
+        style=0,
         format_options=EffectivePushOptions(
             length_limit=length_limit_value,
             display_author=_parse_mapped_int(
@@ -277,7 +265,6 @@ def _resolve_push_options(
                 fallback=DISPLAY_AUTO,
             ),
             display_entry_tags=_parse_bool(display_entry_tags, fallback=False),
-            style=style_value,
             display_media=_parse_bool(display_media, fallback=True),
         ),
     )
@@ -371,9 +358,6 @@ class AgentXmlPushService:
                     tags=_collect_xml_tags(root),
                 ),
                 options.format_options,
-                output_format=EntryTextFormatter.resolve_output_format(
-                    platform_name
-                ),
             )
             media_items = FeedPollingService._media_items_from_parsed(parsed.media)
             media_urls = [

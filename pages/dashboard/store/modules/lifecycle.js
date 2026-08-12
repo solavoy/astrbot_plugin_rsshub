@@ -10,6 +10,7 @@ export const lifecycleModule = {
       users: () => this.loadUsers(),
       feeds: () => this.loadFeeds(),
       'push-history': () => this.loadPushHistory(),
+      lists: () => this.loadLists(),
       settings: () => this.loadSettings(),
       'data-management': () => this.loadDataManagement(),
     };

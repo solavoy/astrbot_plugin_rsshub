@@ -69,7 +69,6 @@ class GetUserSettingsCommand:
             "display_via": user.display_via,
             "display_title": user.display_title,
             "display_entry_tags": user.display_entry_tags,
-            "style": user.style,
             "display_media": user.display_media,
             "default_target_session": user.default_target_session,
         }

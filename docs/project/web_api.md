@@ -72,6 +72,16 @@ Dashboard 的 ID/URL 筛选 UI 使用紧凑筛选栏：关键词框绑定 `keywo
 | 导出文件清空 | `POST /data-management/exports/clear` | 无 | 清空导出目录。 | 不影响 cache 和数据库。 |
 | 插件设置读取 | `GET /plugin-settings` | 无 | 读取启动级和默认订阅级配置。 | 不承担订阅创建、导入、导出。 |
 | 插件设置保存 | `POST /plugin-settings` | 设置 payload | 保存允许编辑的插件设置。 | 推送历史自动清理范围不通过这里保存。 |
+| List 列表 | `GET /lists` | 无 | 返回全部 List（含停用）及订阅数、排队数、最早等待、最近批次状态。 | 订阅数按 `list_id` 归属统计。 |
+| List 创建 | `POST /lists/create` | `name`、`user_id`、`target_session`、`platform_name`、`batch_size`、`max_wait_minutes`、`content_mode`、`full_delivery_mode`、`ai_summary_*`、关键词 | 校验名称/会话/模式枚举后创建。 | 同 scope 下名称唯一；`user_id`/`target_session`/`platform_name` 创建后不可改。 |
+| List 更新 | `POST /lists/update` | `list_id` + 可编辑字段 | 只改可编辑字段（批次条数、等待、内容模式、全文发送方式、AI 总结、关键词、状态）。 | `state` 用于启用/停用；停用后新条目按规则性 skipped 推进水位。 |
+| List 删除 | `POST /lists/delete` | `list_id`、`delete_subscriptions` | `delete_subscriptions=false` 仅解散（订阅 `list_id=NULL`，队列项保留）；`true` 先删订阅再删 List。 | 订阅恢复即时推送或随 List 删除。 |
+| 移动订阅 | `POST /lists/move-subscriptions` | `sub_ids`、`target_list_id` | 服务端校验目标 List 归属（user/target_session/platform）一致后原子更新 `list_id`。 | 跨归属操作不能部分成功；不一致的订阅直接跳过。 |
+| 可加入订阅 | `GET /lists/eligible-subscriptions` | `list_id` | 返回同 scope 且未加入其他 List 的订阅，按 Feed 域名分组。 | 域名取订阅 URL hostname，不解析条目原文链接。 |
+| 批次列表 | `GET /lists/batches` | `list_id` | 返回该 List 最近 50 个批次及分片状态。 | 用于失败批次重试入口。 |
+| 批次重试 | `POST /lists/batches/retry` | `batch_id` | 把 failed 批次重新排队发送未成功分片。 | 已成功分片不重发。 |
+| List 立即推送 | `POST /lists/flush` | `list_id` | 把当前队列项 claim 为一个批次立即发送。 | 手动触发，不等条数阈值或超时。 |
+| List 清空队列 | `POST /lists/clear-queue` | `list_id` | 把 queued/claimed 队列项置为 skipped。 | 已发送的审计记录保留。 |
 
 ## 推送历史返回字段
 

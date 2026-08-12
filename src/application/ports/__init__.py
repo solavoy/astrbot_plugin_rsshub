@@ -4,6 +4,7 @@ Ports live in the application layer. Infrastructure modules provide adapters
 for these protocols at composition time.
 """
 
+from .ai_summary import AiSummaryProvider
 from .clock import Clock, SystemClock
 from .feed_fetcher import FeedFetcher, FeedFetcherFactory
 from .feed_parser import FeedParser
@@ -17,6 +18,7 @@ from .message_sender import (
 )
 
 __all__ = [
+    "AiSummaryProvider",
     "Clock",
     "FeedFetcher",
     "FeedFetcherFactory",

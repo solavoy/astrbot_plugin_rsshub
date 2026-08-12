@@ -47,37 +47,6 @@ class QQOfficialMessageSender(DefaultMessageSender):
             prepared_media_by_url = {
                 pm.original_url: pm for pm in (prepared_media or []) if pm.original_url
             }
-            if self._is_original_style(context) and request.layout:
-                layout_components = self._layout_to_components(
-                    request, prepared_media_by_url=prepared_media_by_url
-                )
-                layout_components = self._apply_first_send_candidates(
-                    layout_components,
-                    prepared_media_by_url,
-                    platform="qq_official",
-                )
-                threshold_result = await self._maybe_send_threshold_degrade(
-                    request,
-                    layout_components,
-                    use_markdown=use_markdown,
-                )
-                if threshold_result is not None:
-                    return threshold_result
-                if self._single_video_component(layout_components) is not None:
-                    return await self._send_single_video_then_fallback(
-                        request,
-                        layout_components,
-                        use_markdown=use_markdown,
-                    )
-                return await self._send_components_in_order(
-                    request.session_id,
-                    layout_components,
-                    combine_image_text=True,
-                    default_text=request.message,
-                    use_markdown=use_markdown,
-                    prepared_media_by_url=prepared_media_by_url,
-                    platform="qq_official",
-                )
 
             components = self._build_components(
                 request,

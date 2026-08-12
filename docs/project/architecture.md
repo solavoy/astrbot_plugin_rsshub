@@ -104,7 +104,7 @@ LLM tools 的入口仍由 `main.py` 注册；具体实现按主题放在 `src/ap
 - `failed_queue_max_retries` 只控制自动重试上限
 - `deduplicate_multi_bot` 只在同一 `target_session` 且最终 payload 等价时压重，并把被压掉的记录写成 `skipped`
 
-sender 层仍保持平台差异隔离：`MessageComponentSorter` 只给出组件顺序，是否拆成多次发送由具体 sender adapter 决定。`style=0` 使用平台自动/经典策略，`style=1` 是 RSSRT 排版策略，`style=2` 使用解析树 layout fragments 尽量保留原始图文顺序。QQ Official 单图会和文本合链，Weixin OC 不合链，OneBot auto/classic 合并转发失败后会回退为纯文本 Nodes。
+sender 层仍保持平台差异隔离：`MessageComponentSorter` 只给出组件顺序，是否拆成多次发送由具体 sender adapter 决定。所有内容统一为规范 Markdown 正文 + 有序媒体集合，顺序固定为正文 → 图片 → 视频 → 音频 → 文件；Telegram 原生渲染 Markdown，其余平台由 sender 边界降级纯文本。`style` 排版策略已移除。QQ Official 单图会和文本合链，Weixin OC 不合链，OneBot 合并转发失败后会回退为纯文本 Nodes。
 
 ### 2. 测试推送
 
@@ -125,7 +125,7 @@ AI tool `rss_push_xml_entry` 不依赖 `sub_id`。它直接：
 3. 构建推送 history
 4. 调用 sender
 
-它只开放安全排版参数：`style`、`send_mode`、`display_media`、`display_title`、`display_author`、`display_via`、`display_entry_tags`、`length_limit`。
+它只开放安全排版参数：`send_mode`、`display_media`、`display_title`、`display_author`、`display_via`、`display_entry_tags`、`length_limit`。
 
 适合“没有订阅但要即时推送”的 agent 场景。
 
@@ -147,7 +147,17 @@ flowchart TD
 
   C --> M["EntryTextFormatter"]
   K --> N["MessageComponentSorter / sender adapters"]
+
+  C --> O["ListQueueService"]
+  A --> P["ListBatchCoordinator"]
+  P --> Q["ListRepository"]
+  O --> Q
+  P --> J
+  P --> R["ListBatchRenderer"]
+  P --> S["AiSummaryProvider"]
 ```
+
+List 链路：订阅属于启用 List 时，`NotificationDispatcher` 在 per-sub 循环委托 `ListQueueService` 做两级关键词过滤与持久化入队（pending history + 队列项同事务）；`ListBatchCoordinator` 由调度器每分钟驱动，按「条数阈值 + 最长等待」触发批次、渲染分片、经 `SessionPushQueue` 串行发送，正文成功后经 `AiSummaryProvider` 追加 AI 总结。
 
 ## 配置职责
 
@@ -178,6 +188,7 @@ Plugin Pages 当前管理：
 - 用户列表
 - Feed 列表
 - 推送历史
+- Lists 聚合推送（新建/编辑/删除、立即推送、清空队列、失败批次重试、按域名加入订阅）
 - 默认订阅设置
 - 数据管理
 

@@ -10,7 +10,6 @@ from ...shared.constants import (
     MEDIA_CACHE_TTL_SECONDS_DEFAULT,
     MEDIA_CACHE_TTL_SECONDS_MIN,
     ONEBOT_NAPCAT_STREAM_MODE_DEFAULT,
-    PLATFORM_ALIASES,
     PLATFORM_ONEBOT,
     PLATFORM_QQ_OFFICIAL,
     PLATFORM_STRATEGY_TEMPLATE_KEYS,
@@ -19,12 +18,11 @@ from ...shared.constants import (
     QQ_OFFICIAL_MARKDOWN_MODE_DEFAULT,
     QQ_OFFICIAL_MARKDOWN_MODE_OPTIONS,
     QQ_OFFICIAL_MEDIA_THRESHOLD_DEFAULT,
-    SENDER_MARKDOWN_PLATFORM_DEFAULT,
-    SENDER_MARKDOWN_PLATFORM_OPTIONS,
     SENDER_STRATEGY_ENABLED_PLATFORMS,
     TELEGRAM_PHOTO_MAX_BYTES,
 )
 from .models import (
+    AiSummarySettings,
     ApplicationSettings,
     BasicSettings,
     FeedFetchSettings,
@@ -106,13 +104,6 @@ _SENDER_STRATEGY_KEYS: tuple[str, ...] = SENDER_STRATEGY_ENABLED_PLATFORMS
 
 _PLATFORM_STRATEGY_TEMPLATE_KEYS: dict[str, str] = PLATFORM_STRATEGY_TEMPLATE_KEYS
 
-# 平台别名 → 规范名，用于把配置里的别名（如 onebot）归一化到 aiocqhttp。
-_PLATFORM_ALIAS_TO_CANONICAL: dict[str, str] = {
-    alias: canonical
-    for canonical, aliases in PLATFORM_ALIASES.items()
-    for alias in aliases
-}
-
 
 def _enabled_sender_strategy_names(value: Any) -> set[str] | None:
     if value is None:
@@ -145,28 +136,14 @@ def _first_strategy_template(value: Any, template_key: str) -> Any:
     )
 
 
-def _build_markdown_platforms(value: Any) -> tuple[str, ...]:
-    """解析勾选的 Markdown 消息渠道（别名归一化到规范名、去重、保序）。
-
-    配置项缺失时返回默认（仅 Telegram）；显式配置为空列表表示任何渠道都不使用 Markdown。
-    """
-    raw = _get_value(value, "markdown_platforms", None)
-    if raw is None:
-        return SENDER_MARKDOWN_PLATFORM_DEFAULT
-    if isinstance(raw, str):
-        raw = [
-            part.strip()
-            for part in raw.replace(",", "\n").splitlines()
-            if part.strip()
-        ]
-    known = set(SENDER_MARKDOWN_PLATFORM_OPTIONS)
-    platforms: list[str] = []
-    for item in raw or []:
-        name = str(item).strip().lower()
-        canonical = _PLATFORM_ALIAS_TO_CANONICAL.get(name, name)
-        if canonical in known and canonical not in platforms:
-            platforms.append(canonical)
-    return tuple(platforms)
+def _build_ai_summary_settings(config: Any) -> AiSummarySettings:
+    """构建 List AI 总结运行态配置。"""
+    ai_cfg = _get_value(config, "ai_summary", {})
+    if not isinstance(ai_cfg, dict):
+        ai_cfg = {}
+    return AiSummarySettings(
+        ai_provider_id=str(_get_value(ai_cfg, "ai_provider_id", "") or "").strip(),
+    )
 
 
 def _build_sender_strategy_settings(value: Any) -> SenderStrategySettings:
@@ -233,12 +210,10 @@ def _build_sender_strategy_settings(value: Any) -> SenderStrategySettings:
         napcat_stream_mode=aiocqhttp_napcat_mode,
     )
     qq_official_config = PlatformStrategySettings(markdown_mode=markdown_mode)
-    markdown_platforms = _build_markdown_platforms(value)
     if enabled is not None:
         enabled = {item for item in enabled if item in _SENDER_STRATEGY_KEYS}
         return SenderStrategySettings(
             **{key: key in enabled for key in _SENDER_STRATEGY_KEYS},
-            markdown_platforms=markdown_platforms,
             telegram_settings=telegram_config,
             aiocqhttp_settings=aiocqhttp_config,
             qq_official_settings=qq_official_config,
@@ -247,7 +222,6 @@ def _build_sender_strategy_settings(value: Any) -> SenderStrategySettings:
         telegram=bool(_get_value(value, PLATFORM_TELEGRAM, True)),
         aiocqhttp=bool(_get_value(value, PLATFORM_ONEBOT, True)),
         qq_official=bool(_get_value(value, PLATFORM_QQ_OFFICIAL, True)),
-        markdown_platforms=markdown_platforms,
         telegram_settings=telegram_config,
         aiocqhttp_settings=aiocqhttp_config,
         qq_official_settings=qq_official_config,
@@ -427,10 +401,10 @@ def build_application_settings(config: Any) -> ApplicationSettings:
             display_entry_tags=bool(
                 _get_value(global_cfg, "display_entry_tags", False)
             ),
-            style=str(_get_value(global_cfg, "style", "auto") or "auto"),
             display_media=bool(_get_value(global_cfg, "display_media", True)),
         ),
         sender_strategies=_build_sender_strategy_settings(sender_cfg),
+        ai_summary=_build_ai_summary_settings(config),
         http=http,
         media_platform_limits=media_platform_limits,
         media=MediaSettings(

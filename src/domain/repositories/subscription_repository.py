@@ -68,6 +68,18 @@ class SubscriptionRepository(Protocol):
         """
         ...
 
+    async def get_by_list(self, list_id: int) -> list[Subscription]:
+        """
+        获取属于指定 List 的订阅。
+
+        Args:
+            list_id: List 唯一标识
+
+        Returns:
+            订阅列表
+        """
+        ...
+
     async def list_for_dashboard(
         self,
         *,

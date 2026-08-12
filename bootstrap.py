@@ -36,6 +36,9 @@ from .src.application.queries import (
 )
 from .src.application.services.agent_xml_push_service import AgentXmlPushService
 from .src.application.services.feed_polling_service import FeedPollingService
+from .src.application.services.list_batch_coordinator import ListBatchCoordinator
+from .src.application.services.list_batch_renderer import ListBatchRenderer
+from .src.application.services.list_queue_service import ListQueueService
 from .src.application.services.notification_dispatcher import NotificationDispatcher
 from .src.application.services.session_push_queue import SessionPushQueue
 from .src.domain.repositories.feed_repository import FeedRepository
@@ -59,6 +62,7 @@ from .src.infrastructure.messaging import (
 from .src.infrastructure.persistence import (
     get_database,
     get_feed_repository,
+    get_list_repository,
     get_push_history_repository,
     get_subscription_repository,
     get_user_repository,
@@ -128,6 +132,8 @@ class PluginDeps(TypedDict, total=False):
     subscription_repo: SubscriptionRepository
     push_history_repo: Any
     notification_dispatcher: NotificationDispatcher
+    list_queue_service: ListQueueService
+    list_batch_coordinator: ListBatchCoordinator
     agent_xml_push_service: AgentXmlPushService
 
 
@@ -180,6 +186,7 @@ async def create_plugin_runtime(
             app_settings=app_settings,
             sender_provider=sender_provider,
             push_job_queue=queue,
+            context=context,
         )
         web_api = _register_web_api(context, plugin_config, deps, config)
         scheduler = await _start_scheduler(
@@ -380,14 +387,11 @@ def _configure_message_senders(app_settings: ApplicationSettings) -> None:
         min_valid_bytes=app_settings.media_platform_limits.min_valid_bytes
     )
     EntryTextFormatter.configure_table_to_image(app_settings.media.table_to_image)
-    EntryTextFormatter.configure_markdown_platforms(
-        app_settings.sender_strategies.markdown_platforms
-    )
     logger.info(
         "sender behavior configured: gif_transcode=%s, gif_profile=%s, "
         "video_transcode=%s, "
         "ffmpeg_source=%s, image_relay=%s, media_relay=%s, "
-        "napcat_stream=%s, table_to_image=%s, markdown_platforms=%s",
+        "napcat_stream=%s, table_to_image=%s",
         app_settings.media.gif_transcode,
         app_settings.media.gif_transcode_profile,
         app_settings.media.video_transcode,
@@ -396,7 +400,6 @@ def _configure_message_senders(app_settings: ApplicationSettings) -> None:
         app_settings.media.media_relay_base_url or "(none)",
         app_settings.media_platform_limits.onebot_napcat_stream_mode,
         app_settings.media.table_to_image,
-        ",".join(app_settings.sender_strategies.markdown_platforms) or "(none)",
     )
 
 
@@ -415,11 +418,17 @@ async def _build_dependencies(
     app_settings: ApplicationSettings,
     sender_provider: InfrastructureMessageSenderProvider,
     push_job_queue: SessionPushQueue,
+    context: Context | None = None,
 ) -> tuple[PluginDeps, NotificationDispatcher]:
     feed_repo = get_feed_repository()
     sub_repo = get_subscription_repository()
     user_repo = get_user_repository()
     push_history_repo = get_push_history_repository()
+    list_repo = get_list_repository()
+    list_queue_service = ListQueueService(
+        list_repo=list_repo,
+        push_history_repo=push_history_repo,
+    )
 
     notification_dispatcher = NotificationDispatcher(
         subscription_repo=sub_repo,
@@ -429,6 +438,7 @@ async def _build_dependencies(
         push_job_queue=push_job_queue,
         subscription_defaults=app_settings.subscription_defaults,
         basic_settings=app_settings.basic,
+        list_queue_service=list_queue_service,
     )
     fetcher_factory = _build_fetcher_factory()
 
@@ -442,6 +452,26 @@ async def _build_dependencies(
         notification_dispatcher=notification_dispatcher,
         history_entry_limit=app_settings.scheduler.history_entry_limit,
     )
+    summary_provider = None
+    if context is not None:
+        from .src.application.services.ai_summary_service import (
+            AstrBotAiSummaryProvider,
+        )
+
+        summary_provider = AstrBotAiSummaryProvider(
+            context=context,
+            ai_provider_id=app_settings.ai_summary.ai_provider_id,
+        )
+    list_batch_coordinator = ListBatchCoordinator(
+        list_repo=list_repo,
+        queue_repo=list_repo,
+        batch_repo=list_repo,
+        renderer=ListBatchRenderer(),
+        session_push_queue=push_job_queue,
+        summary_provider=summary_provider,
+        dispatcher=notification_dispatcher,
+        push_history_repo=push_history_repo,
+    )
     deps = PluginDeps(
         subscribe_cmd=SubscribeFeedCommand(
             subscription_repo=sub_repo,
@@ -453,13 +483,20 @@ async def _build_dependencies(
         unsubscribe_cmd=UnsubscribeFeedCommand(
             subscription_repo=sub_repo,
             feed_repo=feed_repo,
+            list_queue_service=list_queue_service,
         ),
         sub_state_cmd=SubStateCommand(subscription_repo=sub_repo),
-        update_sub_cmd=UpdateSubscriptionCommand(subscription_repo=sub_repo),
+        update_sub_cmd=UpdateSubscriptionCommand(
+            subscription_repo=sub_repo,
+            list_repo=list_repo,
+        ),
         list_query=GetFeedListQuery(subscription_repo=sub_repo, feed_repo=feed_repo),
         batch_activate_cmd=BatchActivateCommand(subscription_repo=sub_repo),
         batch_deactivate_cmd=BatchDeactivateCommand(subscription_repo=sub_repo),
-        batch_unsub_cmd=BatchUnsubscribeCommand(subscription_repo=sub_repo),
+        batch_unsub_cmd=BatchUnsubscribeCommand(
+            subscription_repo=sub_repo,
+            list_queue_service=list_queue_service,
+        ),
         export_cmd=ExportSubscriptionsCommand(
             subscription_repo=sub_repo,
             feed_repo=feed_repo,
@@ -485,6 +522,8 @@ async def _build_dependencies(
         subscription_repo=sub_repo,
         push_history_repo=push_history_repo,
         notification_dispatcher=notification_dispatcher,
+        list_queue_service=list_queue_service,
+        list_batch_coordinator=list_batch_coordinator,
         agent_xml_push_service=AgentXmlPushService(notification_dispatcher),
     )
     return deps, notification_dispatcher
@@ -499,6 +538,7 @@ async def _start_scheduler(
     scheduler = RSSScheduler(
         feed_polling_service=deps["polling_service"],
         notification_dispatcher=notification_dispatcher,
+        list_batch_coordinator=deps.get("list_batch_coordinator"),
         default_interval=app_settings.scheduler.default_interval,
         history_retention_days=app_settings.scheduler.history_retention_days,
     )
@@ -545,6 +585,9 @@ def _register_web_api(
         notification_dispatcher=deps["notification_dispatcher"],
         config=config,
         raw_config=raw_config,
+        list_queue_service=deps.get("list_queue_service"),
+        list_repo=get_list_repository(),
+        list_batch_coordinator=deps.get("list_batch_coordinator"),
     )
     web_api.register_all(context)
     logger.info("Web API 已注册")

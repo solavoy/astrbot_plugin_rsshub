@@ -216,7 +216,7 @@ def test_telegram_chain_does_not_truncate_caption_text():
     assert Plain.call_args.args[0] == text
 
 
-def test_message_component_sorter_orders_media_before_text_for_onebot():
+def test_message_component_sorter_orders_text_before_media_for_onebot():
     sorter = MessageComponentSorter()
 
     components = sorter.build_components(
@@ -243,10 +243,10 @@ def test_message_component_sorter_orders_media_before_text_for_onebot():
     )
 
     assert [(item.kind, item.media_type) for item in components] == [
+        ("text", ""),
         ("media", "image"),
         ("media", "video"),
         ("tail", "file"),
-        ("text", ""),
     ]
 
 
@@ -271,8 +271,8 @@ def test_message_formatter_build_components_keeps_default_media_text_tail_order(
     )
 
     assert [(item.kind, item.media_type) for item in components] == [
-        ("media", "image"),
         ("text", ""),
+        ("media", "image"),
         ("tail", "audio"),
     ]
 
@@ -303,7 +303,7 @@ async def test_entry_text_formatter_decodes_entity_escaped_html():
     assert "&lt;img" not in text
     assert "<img" not in text
     assert "Body" in text
-    assert "via https://example.com/post | Feed (author: Author)" in text
+    assert "via [https://example\\.com/post](https://example\\.com/post) | Feed (author: Author)" in text
 
 
 @pytest.mark.asyncio
@@ -333,7 +333,7 @@ async def test_entry_text_formatter_keeps_table_text_when_media_hidden():
         EffectivePushOptions(display_media=False),
     )
 
-    assert "A | B" in text
+    assert "A \\| B" in text
     assert "[表格已转为图片]" not in text
 
 
@@ -367,59 +367,36 @@ async def test_entry_text_formatter_can_render_lightweight_markdown():
     assert "(author: Author\\_Name)" in text
 
 
-def test_resolve_output_format_is_platform_aware():
-    # 默认仅 Telegram（含短名 tg）输出 Markdown，其余平台保持纯文本
-    assert EntryTextFormatter.resolve_output_format("telegram") is (
-        EntryOutputFormat.MARKDOWN
+@pytest.mark.asyncio
+async def test_format_entry_defaults_to_markdown():
+    formatter = EntryTextFormatter()
+
+    text = await formatter.format_entry(
+        EntryFormatInput(
+            title="T",
+            content="Body",
+            link="https://e.com/x",
+            feed_title="F",
+        ),
+        EffectivePushOptions(),
     )
-    assert EntryTextFormatter.resolve_output_format("tg") is EntryOutputFormat.MARKDOWN
-    assert EntryTextFormatter.resolve_output_format("Telegram") is (
-        EntryOutputFormat.MARKDOWN
-    )
+
+    assert text.startswith("**T**")
+    assert "\n\n---\n\n" in text
+    assert "via [https://e\\.com/x](https://e\\.com/x) | F" in text
+
+
+def test_should_render_markdown_only_for_telegram():
+    # 仅 Telegram（含短名 tg/别名）原生渲染 Markdown
+    assert EntryTextFormatter.should_render_markdown("telegram") is True
+    assert EntryTextFormatter.should_render_markdown("tg") is True
+    assert EntryTextFormatter.should_render_markdown("Telegram") is True
     for platform in ("onebot", "aiocqhttp", "qq_official", "weixin_oc", "", None):
-        assert EntryTextFormatter.resolve_output_format(platform) is (
-            EntryOutputFormat.PLAIN
-        )
-
-
-def test_resolve_output_format_follows_configured_markdown_platforms():
-    # 勾选 telegram + aiocqhttp 后，OneBot（含别名 onebot）也输出 Markdown
-    EntryTextFormatter.configure_markdown_platforms(["telegram", "aiocqhttp"])
-    try:
-        assert EntryTextFormatter.resolve_output_format("telegram") is (
-            EntryOutputFormat.MARKDOWN
-        )
-        assert EntryTextFormatter.resolve_output_format("onebot") is (
-            EntryOutputFormat.MARKDOWN
-        )
-        assert EntryTextFormatter.resolve_output_format("aiocqhttp") is (
-            EntryOutputFormat.MARKDOWN
-        )
-        assert EntryTextFormatter.resolve_output_format("qq_official") is (
-            EntryOutputFormat.PLAIN
-        )
-        assert EntryTextFormatter.resolve_output_format("weixin_oc") is (
-            EntryOutputFormat.PLAIN
-        )
-    finally:
-        EntryTextFormatter.configure_markdown_platforms(["telegram"])
-
-
-def test_resolve_output_format_empty_config_disables_markdown_everywhere():
-    EntryTextFormatter.configure_markdown_platforms([])
-    try:
-        assert EntryTextFormatter.resolve_output_format("telegram") is (
-            EntryOutputFormat.PLAIN
-        )
-        assert EntryTextFormatter.resolve_output_format("tg") is (
-            EntryOutputFormat.PLAIN
-        )
-    finally:
-        EntryTextFormatter.configure_markdown_platforms(["telegram"])
+        assert EntryTextFormatter.should_render_markdown(platform) is False
 
 
 @pytest.mark.asyncio
-async def test_entry_text_formatter_invalid_output_format_falls_back_to_plain():
+async def test_entry_text_formatter_invalid_output_format_falls_back_to_markdown():
     formatter = EntryTextFormatter()
 
     text = await formatter.format_entry(
@@ -433,8 +410,8 @@ async def test_entry_text_formatter_invalid_output_format_falls_back_to_plain():
         output_format="bad-format",
     )
 
-    assert text.startswith("Title\n\nBody")
-    assert "via https://example.com/post | Feed" in text
+    assert text.startswith("**Title**")
+    assert "via [https://example\\.com/post](https://example\\.com/post) | Feed" in text
 
 
 @pytest.mark.asyncio
@@ -491,7 +468,8 @@ async def test_entry_text_formatter_removes_repeated_title_when_title_visible():
         EffectivePushOptions(display_title=0),
     )
 
-    assert text.startswith("Lead text before hashtags\n\n#tag")
+    assert text.startswith("**Lead text before hashtags**")
+    assert "\\#tag" in text
     assert text.count("Lead text before hashtags") == 1
 
 
@@ -511,7 +489,7 @@ async def test_entry_text_formatter_omits_broken_separator_when_link_missing():
         EffectivePushOptions(),
     )
 
-    assert text == "Body only\n\nTimeline (author: Author)"
+    assert text == "Body only\n\n---\n\nTimeline (author: Author)"
     assert "via  |" not in text
     assert " | " not in text
 
@@ -585,8 +563,8 @@ def test_sorter_video_gif_becomes_image_component():
         platform="onebot",
     )
     assert [(item.kind, item.media_type, item.file) for item in components] == [
-        ("media", "image", "/tmp/video.gif"),
         ("text", "", ""),
+        ("media", "image", "/tmp/video.gif"),
     ]
     assert all(item.text == "hello" for item in components if item.kind == "text")
 
@@ -611,3 +589,41 @@ def test_formatter_build_components_gif_conversion():
     ]
     assert media_items == [("media", "image", "/tmp/video.gif")]
     assert all(c.text == "hello" for c in components if c.kind == "text")
+
+
+# ------------------------------------------------------------------
+# 统一发送：正文唯一 + 集中媒体顺序（飞书/默认 sender 多图回归）
+# ------------------------------------------------------------------
+
+
+def test_multiple_images_never_duplicate_body_text():
+    formatter = MessageFormatter()
+    components = formatter.build_components(
+        prepared_media=[
+            PreparedMedia(
+                media_type="image",
+                original_url="https://example.com/a.jpg",
+                local_path="/tmp/a.jpg",
+            ),
+            PreparedMedia(
+                media_type="image",
+                original_url="https://example.com/b.jpg",
+                local_path="/tmp/b.jpg",
+            ),
+            PreparedMedia(
+                media_type="image",
+                original_url="https://example.com/c.jpg",
+                local_path="/tmp/c.jpg",
+            ),
+        ],
+        text="正文",
+        failed_urls=[],
+        platform="",  # 默认 sender（飞书等）
+    )
+    texts = [c.text for c in components if c.kind == "text"]
+    images = [c for c in components if c.kind == "media" and c.media_type == "image"]
+    assert len(texts) == 1 and texts[0] == "正文"
+    assert len(images) == 3
+    # 顺序固定：正文在最前，图片依次连续
+    assert components[0].kind == "text"
+    assert [c.media_type for c in components[1:]] == ["image", "image", "image"]

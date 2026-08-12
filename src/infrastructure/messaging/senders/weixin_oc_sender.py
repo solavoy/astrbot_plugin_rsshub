@@ -22,20 +22,6 @@ class WeixinOCMessageSender(DefaultMessageSender):
         cleanup_owned = request.prepared_media is None
         try:
             prepared_media = await self._prepare_effective_media(request, context)
-            if self._is_original_style(context) and request.layout:
-                prepared_media_by_url = {
-                    pm.original_url: pm
-                    for pm in (prepared_media or [])
-                    if pm.original_url
-                }
-                return await self._send_components_in_order(
-                    request.session_id,
-                    self._layout_to_components(
-                        request, prepared_media_by_url=prepared_media_by_url
-                    ),
-                    combine_image_text=False,
-                    default_text=request.message,
-                )
 
             components = self._build_components(
                 request,

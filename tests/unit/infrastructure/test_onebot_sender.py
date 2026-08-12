@@ -181,10 +181,10 @@ async def test_onebot_sender_places_media_nodes_before_text(monkeypatch):
 
     assert result.ok is True
     nodes = calls[0][1][0].nodes
-    assert isinstance(nodes[0].content[0], _Image)
-    assert isinstance(nodes[1].content[0], _Video)
-    assert isinstance(nodes[2].content[0], _Plain)
-    assert nodes[2].content[0].text == "entry content"
+    assert isinstance(nodes[0].content[0], _Plain)
+    assert nodes[0].content[0].text == "entry content"
+    assert isinstance(nodes[1].content[0], _Image)
+    assert isinstance(nodes[2].content[0], _Video)
 
 
 @pytest.mark.asyncio
@@ -238,7 +238,7 @@ async def test_onebot_sender_prefers_local_video_path_by_default(monkeypatch):
 
     assert result.ok is True
     assert len(calls) == 1
-    media_node = calls[0][1][0].nodes[0]
+    media_node = calls[0][1][0].nodes[1]
     assert media_node.content[0].file == "/tmp/video.mp4"
 
 
@@ -289,7 +289,7 @@ async def test_onebot_sender_video_uses_local_file(
     )
 
     assert result.ok is True
-    media_node = calls[0][1][0].nodes[0]
+    media_node = calls[0][1][0].nodes[1]
     assert media_node.content[0].file == "/tmp/video.mp4"
 
 
@@ -362,7 +362,7 @@ async def test_onebot_sender_ignores_telegraph_strategy(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_onebot_original_style_sends_layout_without_merged_forward(monkeypatch):
+async def test_onebot_ignores_layout_and_uses_merged_forward(monkeypatch):
     sender = OneBotMessageSender()
     calls: list[tuple[str, list]] = []
 
@@ -372,10 +372,16 @@ async def test_onebot_original_style_sends_layout_without_merged_forward(monkeyp
 
     monkeypatch.setattr(sender, "_send_chain", fake_send_chain)
     monkeypatch.setattr(
-        sys.modules["astrbot.api.message_components"], "Plain", _Plain, raising=False
+        "astrbot_plugin_rsshub.src.infrastructure.messaging.senders.onebot_sender.Node",
+        _Node,
     )
     monkeypatch.setattr(
-        sys.modules["astrbot.api.message_components"], "Image", _Image, raising=False
+        "astrbot_plugin_rsshub.src.infrastructure.messaging.senders.onebot_sender.Nodes",
+        _Nodes,
+    )
+    monkeypatch.setattr(
+        "astrbot_plugin_rsshub.src.infrastructure.messaging.senders.onebot_sender.Plain",
+        _Plain,
     )
 
     result = await sender.send_to_user(
@@ -389,12 +395,6 @@ async def test_onebot_original_style_sends_layout_without_merged_forward(monkeyp
                     url="https://example.com/1.jpg",
                 ),
                 LayoutFragment(kind="text", text="caption 1"),
-                LayoutFragment(
-                    kind="image",
-                    media_type="image",
-                    url="https://example.com/2.jpg",
-                ),
-                LayoutFragment(kind="text", text="caption 2"),
             ],
         ),
         context=MessageContext(
@@ -405,13 +405,10 @@ async def test_onebot_original_style_sends_layout_without_merged_forward(monkeyp
     )
 
     assert result.ok is True
-    assert len(calls) == 2
-    assert isinstance(calls[0][1][0], _Image)
-    assert isinstance(calls[0][1][1], _Plain)
-    assert calls[0][1][1].text == "caption 1"
-    assert isinstance(calls[1][1][0], _Image)
-    assert isinstance(calls[1][1][1], _Plain)
-    assert calls[1][1][1].text == "caption 2"
+    assert len(calls) == 1
+    nodes = calls[0][1][0].nodes
+    assert isinstance(nodes[0].content[0], _Plain)
+    assert nodes[0].content[0].text == "fallback text"
 
 
 @pytest.mark.asyncio
@@ -586,14 +583,14 @@ async def test_onebot_merged_forward_uses_image_for_gif(monkeypatch):
 
     assert result.ok is True
     nodes = calls[0][1][0].nodes
-    assert len(nodes) == 2  # image node + text node
-    assert isinstance(nodes[0].content[0], _Image)
-    assert nodes[0].content[0].file == "/tmp/video.gif"
+    assert len(nodes) == 2  # text node + image node
+    assert isinstance(nodes[1].content[0], _Image)
+    assert nodes[1].content[0].file == "/tmp/video.gif"
 
 
 @pytest.mark.asyncio
-async def test_onebot_original_style_gif_from_downloaded_media(monkeypatch):
-    """original layout 使用真实预下载结果时，video→gif 应按 Image 发送。"""
+async def test_onebot_gif_from_downloaded_media_uses_image_in_forward(monkeypatch):
+    """合并转发下 video→gif 应按 Image 节点发送。"""
     sender = OneBotMessageSender()
     calls: list[tuple[str, list]] = []
 
@@ -614,13 +611,19 @@ async def test_onebot_original_style_gif_from_downloaded_media(monkeypatch):
     monkeypatch.setattr(sender, "prepare_media", fake_prepare_media)
     monkeypatch.setattr(sender, "_send_chain", fake_send_chain)
     monkeypatch.setattr(
-        sys.modules["astrbot.api.message_components"], "Plain", _Plain, raising=False
+        "astrbot_plugin_rsshub.src.infrastructure.messaging.senders.onebot_sender.Node",
+        _Node,
+    )
+    monkeypatch.setattr(
+        "astrbot_plugin_rsshub.src.infrastructure.messaging.senders.onebot_sender.Nodes",
+        _Nodes,
+    )
+    monkeypatch.setattr(
+        "astrbot_plugin_rsshub.src.infrastructure.messaging.senders.onebot_sender.Plain",
+        _Plain,
     )
     monkeypatch.setattr(
         sys.modules["astrbot.api.message_components"], "Image", _Image, raising=False
-    )
-    monkeypatch.setattr(
-        sys.modules["astrbot.api.message_components"], "Video", _Video, raising=False
     )
 
     result = await sender.send_to_user(
@@ -642,7 +645,7 @@ async def test_onebot_original_style_gif_from_downloaded_media(monkeypatch):
 
     assert result.ok is True
     assert len(calls) == 1
-    assert isinstance(calls[0][1][0], _Image)
-    assert calls[0][1][0].file == "/tmp/video.gif"
-    assert isinstance(calls[0][1][1], _Plain)
-    assert calls[0][1][1].text == "caption"
+    nodes = calls[0][1][0].nodes
+    assert isinstance(nodes[0].content[0], _Plain)
+    assert isinstance(nodes[1].content[0], _Image)
+    assert nodes[1].content[0].file == "/tmp/video.gif"

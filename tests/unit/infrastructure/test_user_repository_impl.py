@@ -46,7 +46,6 @@ async def test_save_updates_existing_without_insert(monkeypatch):
         display_via=-100,
         display_title=-100,
         display_entry_tags=-100,
-        style=-100,
         display_media=-100,
         default_target_session=None,
         needs_binding_notice=0,

@@ -46,10 +46,6 @@ class User(BaseModel):
         default=INHERIT_VALUE, description="显示标题: -1=禁用, 0=自动, 1=强制"
     )
     display_entry_tags: int = Field(default=INHERIT_VALUE, description="显示标签")
-    style: int = Field(
-        default=INHERIT_VALUE,
-        description="推送排版策略: 0=自动, 1=RSSRT, 2=原始顺序",
-    )
     display_media: int = Field(
         default=INHERIT_VALUE, description="显示媒体: -1=禁用, 0=启用"
     )

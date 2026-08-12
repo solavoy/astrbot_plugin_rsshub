@@ -25,6 +25,7 @@ from ...domain.entities.content_types import (
     LayoutFragment,
     is_generated_media_url,
 )
+from ...domain.entities.list_entities import build_entry_key
 from ...domain.entities.push_history import PushHistory
 from ...domain.repositories.push_history_repository import PushHistoryRepository
 from ...domain.repositories.subscription_repository import SubscriptionRepository
@@ -33,7 +34,6 @@ from ...infrastructure.config import BasicSettings, SubscriptionDefaults
 from ...infrastructure.pipeline import (
     EffectivePushOptions,
     EntryFormatInput,
-    EntryOutputFormat,
     EntryTextFormatter,
     MessageFormatter,
 )
@@ -44,7 +44,6 @@ from ...shared.constants import (
     SEND_MODE_AUTO,
     SEND_MODE_DIRECT,
     SEND_MODE_LINK_ONLY,
-    STYLE_ORIGINAL,
 )
 from ..ports import MessageContext, MessageSenderProvider, SendRequest
 from .session_push_queue import PushJob, SessionPushQueue
@@ -94,7 +93,6 @@ class PreparedSubscriptionDispatch:
     effective_link: str
     effective_content: str
     effective_send_mode: int
-    effective_style: int
     effective_media_urls: list[str] | None
     effective_media_items: list[tuple[str, str]] | None
     effective_layout: list[LayoutFragment] | None
@@ -260,6 +258,7 @@ class NotificationDispatcher:
         push_job_queue: SessionPushQueue | None = None,
         subscription_defaults: SubscriptionDefaults | None = None,
         basic_settings: BasicSettings | None = None,
+        list_queue_service: Any | None = None,
     ):
         self._subscription_repo = subscription_repo
         self._user_repo = user_repo
@@ -273,6 +272,7 @@ class NotificationDispatcher:
             subscription_defaults or SubscriptionDefaults()
         )
         self._basic_settings = basic_settings or BasicSettings()
+        self._list_queue_service = list_queue_service
 
     @staticmethod
     def _target_from_subscription(subscription) -> SendTarget:
@@ -347,18 +347,6 @@ class NotificationDispatcher:
                 {"禁用": -1, "自动": 0, "强制": 1},
             ),
             display_entry_tags=bool(getattr(defaults, "display_entry_tags", False)),
-            style=display_value(
-                getattr(defaults, "style", "auto"),
-                {
-                    "auto": 0,
-                    "classic": 0,
-                    "RSStT": 0,
-                    "rssrt": 1,
-                    "RSSRT": 1,
-                    "flowerss": 0,
-                    "original": 2,
-                },
-            ),
             display_media=bool(getattr(defaults, "display_media", True)),
         )
 
@@ -418,9 +406,6 @@ class NotificationDispatcher:
                     0 if defaults.display_entry_tags else -1,
                 )
                 != -1
-            ),
-            style=int(
-                self._resolve_option("style", subscription, user, defaults.style) or 0
             ),
             display_media=bool(
                 self._resolve_option(
@@ -684,15 +669,11 @@ class NotificationDispatcher:
                     effective_send_mode = self._resolve_send_mode(sub, user)
                     effective_media_urls = media_urls
                     effective_media_items = media_items
-                    effective_layout = (
-                        list(processed_entry.layout)
-                        if processed_entry is not None and processed_entry.layout
-                        else None
-                    )
+                    # 统一发送模型：sender 不再消费 original layout。
+                    effective_layout = None
                     if not effective_options.display_media:
                         effective_media_urls = None
                         effective_media_items = None
-                        effective_layout = None
                     if effective_send_mode == SEND_MODE_LINK_ONLY:
                         effective_content = self._build_link_only_content(
                             entry_title=effective_title,
@@ -700,14 +681,6 @@ class NotificationDispatcher:
                         )
                         effective_media_urls = None
                         effective_media_items = None
-                        effective_layout = None
-                    effective_layout = self._limit_original_layout_text(
-                        effective_layout,
-                        style=effective_options.style,
-                        length_limit=effective_options.length_limit,
-                    )
-                    if effective_layout:
-                        layouts_to_cleanup.append(effective_layout)
 
                     # 发送前指纹保护（dispatch_guard）
                     # 检查是否已有相同 entry_guid 的成功推送记录
@@ -744,6 +717,92 @@ class NotificationDispatcher:
                             stats["skipped"] += 1
                             continue
 
+                    # List 路由：订阅属于 List 时走持久化入队，不即时发送。
+                    list_id = int(getattr(sub, "list_id", 0) or 0)
+                    if list_id and self._list_queue_service is not None:
+                        list_entity = await self._list_queue_service.load_list(list_id)
+                        if list_entity is not None and not list_entity.is_active():
+                            # List 停用：不新入队，新条目按规则性 skipped 推进水位。
+                            await self._save_skipped_history(
+                                subscription=sub,
+                                feed_id=feed_id,
+                                processed_entry=processed_entry,
+                                persisted_media_urls=(
+                                    persisted_media_urls
+                                    if effective_options.display_media
+                                    and persisted_media_urls
+                                    else None
+                                ),
+                                effective_title=effective_title,
+                                effective_link=effective_link,
+                                effective_content=effective_content,
+                                entry_guid=entry_guid,
+                                feed_title=feed_title,
+                                feed_link=feed_link,
+                                reason="list disabled",
+                            )
+                            logger.debug("订阅 %s 所属 List %s 已停用，跳过", sub.id, list_id)
+                            stats["skipped"] += 1
+                            continue
+                        if list_entity is not None and list_entity.is_active():
+                            filter_result = self._list_queue_service.filter_for_list(
+                                sub,
+                                list_entity,
+                                effective_content=effective_content,
+                                title=effective_title,
+                            )
+                            if not filter_result.allowed:
+                                await self._save_skipped_history(
+                                    subscription=sub,
+                                    feed_id=feed_id,
+                                    processed_entry=processed_entry,
+                                    persisted_media_urls=(
+                                        persisted_media_urls
+                                        if effective_options.display_media
+                                        and persisted_media_urls
+                                        else None
+                                    ),
+                                    effective_title=effective_title,
+                                    effective_link=effective_link,
+                                    effective_content=effective_content,
+                                    entry_guid=entry_guid,
+                                    feed_title=feed_title,
+                                    feed_link=feed_link,
+                                    reason=filter_result.reason,
+                                )
+                                logger.debug(
+                                    "订阅 %s 命中过滤规则，跳过: %s",
+                                    sub.id,
+                                    filter_result.reason,
+                                )
+                                stats["skipped"] += 1
+                                continue
+                            enq = await self._list_queue_service.enqueue_durable(
+                                list_id=list_id,
+                                sub_id=int(sub.id or 0),
+                                feed_id=feed_id,
+                                entry_key=build_entry_key(
+                                    entry_guid or "", effective_link
+                                ),
+                                entry_title=effective_title,
+                                entry_link=effective_link,
+                                feed_title=feed_title,
+                                feed_link=feed_link,
+                                markdown_content=effective_content,
+                                media_items=normalized_media,
+                                user_id=sub.user_id,
+                                target_session=str(sub.target_session or ""),
+                                platform_name=str(sub.platform_name or ""),
+                            )
+                            if enq.durably_queued:
+                                stats["durably_queued"] = (
+                                    stats.get("durably_queued", 0) + 1
+                                )
+                            else:
+                                stats["failed"] += 1
+                                record_error_detail(enq.error)
+                            continue
+
                     prepared_dispatches.append(
                         PreparedSubscriptionDispatch(
                             subscription=sub,
@@ -752,7 +811,6 @@ class NotificationDispatcher:
                             effective_link=effective_link,
                             effective_content=effective_content,
                             effective_send_mode=effective_send_mode,
-                            effective_style=effective_options.style,
                             effective_media_urls=effective_media_urls,
                             effective_media_items=effective_media_items,
                             effective_layout=effective_layout,
@@ -871,7 +929,6 @@ class NotificationDispatcher:
                         feed_id=feed_id,
                         sub_id=sub.id,
                         send_mode=prepared.effective_send_mode,
-                        style=prepared.effective_style,
                     )
 
                     # 5. 更新推送状态
@@ -1158,11 +1215,8 @@ class NotificationDispatcher:
                         send_mode=self._normalize_send_mode_value(send_mode),
                         style=style,
                         sender_strategy=sender_strategy,
-                        render_markdown=(
-                            EntryTextFormatter.resolve_output_format(
-                                target.platform_name
-                            )
-                            is EntryOutputFormat.MARKDOWN
+                        render_markdown=EntryTextFormatter.should_render_markdown(
+                            target.platform_name
                         ),
                     ),
                 )
@@ -1214,43 +1268,62 @@ class NotificationDispatcher:
             logger.error("发送通知失败: %s", e, exc_info=True)
             return {"ok": False, "error": str(e)}
 
-    @staticmethod
-    def _limit_original_layout_text(
-        layout: list[LayoutFragment] | None,
+    async def send_to_session_now(
+        self,
         *,
-        style: int,
-        length_limit: int,
-    ) -> list[LayoutFragment] | None:
-        if style != STYLE_ORIGINAL or not layout or length_limit <= 0:
-            return layout
+        target: SendTarget,
+        content: str,
+        media_urls: list[str] | None,
+        media_items: list[tuple[str, str]] | None = None,
+        layout: list[LayoutFragment] | None = None,
+        job_description: str = "",
+        channel_title: str = "",
+        channel_link: str = "",
+        entry_title: str = "",
+        entry_link: str = "",
+        send_mode: int | None = None,
+    ) -> dict[str, Any]:
+        """免入队立即发送（供 List 批次 job 内部调用，避免 SessionPushQueue 重入死锁）。
 
-        limited: list[LayoutFragment] = []
-        remaining = length_limit
-        for fragment in layout:
-            kind = str(fragment.kind or "").strip()
-            if kind != "text":
-                limited.append(fragment)
-                continue
-
-            text = str(fragment.text or "")
-            if not text or remaining <= 0:
-                continue
-            if len(text) > remaining:
-                text = _entry_text_formatter._truncate(text, remaining)
-            limited.append(
-                LayoutFragment(
-                    kind=fragment.kind,
-                    text=text,
-                    media_type=fragment.media_type,
-                    url=fragment.url,
-                    local_path=fragment.local_path,
-                    name=fragment.name,
-                    fallback_text=fragment.fallback_text,
-                )
+        调用方（ListBatchCoordinator）已把整批发送放在会话队列中，这里直接调用
+        sender，不再重复入队。
+        """
+        try:
+            sender = self._sender_provider.get(target.platform_name)
+            target_session = target.target_session
+            if not target_session:
+                logger.warning("推送目标 %s 没有目标会话", target.user_id)
+                return {"ok": False, "error": "No target session"}
+            normalized_media = normalize_media_items(
+                media_urls=media_urls,
+                media_items=media_items,
             )
-            remaining -= len(text)
-
-        return limited
+            result = await sender.send_to_user(
+                SendRequest(
+                    session_id=target_session,
+                    message=content,
+                    media=normalized_media if normalized_media else None,
+                    layout=layout,
+                ),
+                context=MessageContext(
+                    channel_title=channel_title,
+                    channel_link=channel_link,
+                    entry_title=entry_title,
+                    entry_link=entry_link,
+                    platform_name=target.platform_name or "",
+                    send_mode=self._normalize_send_mode_value(send_mode),
+                    render_markdown=EntryTextFormatter.should_render_markdown(
+                        target.platform_name
+                    ),
+                ),
+            )
+            return {
+                "ok": result.ok,
+                "error": result.detail if not result.ok else "",
+            }
+        except Exception as e:
+            logger.error("List 批次分片发送失败: %s", e, exc_info=True)
+            return {"ok": False, "error": str(e)}
 
     @staticmethod
     async def _format_effective_entry_content(
@@ -1265,13 +1338,7 @@ class NotificationDispatcher:
         platform: str = "",
     ) -> str:
         if raw_entry is None:
-            cleaned = await _entry_text_formatter.clean_text(fallback_content)
-            if options.length_limit > 0:
-                cleaned = _entry_text_formatter._truncate(
-                    cleaned,
-                    options.length_limit,
-                )
-            return cleaned
+            return fallback_content
         return await _entry_text_formatter.format_entry(
             EntryFormatInput(
                 title=raw_entry.title or entry_title,
@@ -1284,7 +1351,6 @@ class NotificationDispatcher:
                 tags=tuple(getattr(raw_entry, "tags", ()) or ()),
             ),
             options,
-            output_format=EntryTextFormatter.resolve_output_format(platform),
         )
 
     async def dispatch_pending_retries(self, limit: int = 100) -> dict[str, int]:

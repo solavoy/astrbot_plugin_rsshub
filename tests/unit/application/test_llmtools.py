@@ -381,7 +381,6 @@ async def test_llm_tool_rss_push_xml_entry_schema_exposes_safe_formatting_params
 
     properties = tool.parameters["properties"]
     for key in (
-        "style",
         "send_mode",
         "display_media",
         "display_title",
@@ -391,7 +390,7 @@ async def test_llm_tool_rss_push_xml_entry_schema_exposes_safe_formatting_params
         "length_limit",
     ):
         assert key in properties
-    assert properties["style"]["enum"] == ["auto", "rssrt", "original"]
+    assert "style" not in properties
     assert properties["send_mode"]["enum"] == ["auto", "link_only", "direct"]
     assert properties["display_media"]["type"] == "boolean"
     assert properties["length_limit"]["type"] == "integer"
@@ -418,7 +417,6 @@ async def test_llm_tool_rss_push_xml_entry_passes_safe_formatting_params():
         "guid-1",
         "idem-1",
         False,
-        style="original",
         send_mode="link_only",
         display_media=False,
         display_title="disabled",
@@ -442,7 +440,6 @@ async def test_llm_tool_rss_push_xml_entry_passes_safe_formatting_params():
         entry_guid="guid-1",
         idempotency_key="idem-1",
         dry_run=False,
-        style="original",
         send_mode="link_only",
         display_media=False,
         display_title="disabled",

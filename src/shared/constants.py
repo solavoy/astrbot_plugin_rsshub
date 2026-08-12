@@ -43,12 +43,6 @@ class DisplayVia(IntEnum):
     FORCED = 1
 
 
-class StyleMode(IntEnum):
-    AUTO = 0
-    RSSRT = 1
-    ORIGINAL = 2
-
-
 class SourceType(str, Enum):
     FEED = "feed"
     AGENT = "agent"
@@ -153,13 +147,6 @@ DISPLAY_VIA_LINK_ONLY = int(DisplayVia.LINK_ONLY)
 DISPLAY_VIA_AUTO = int(DisplayVia.AUTO)
 DISPLAY_VIA_FORCED = int(DisplayVia.FORCED)
 
-STYLE_AUTO = int(StyleMode.AUTO)
-STYLE_RSSRT = int(StyleMode.RSSRT)
-STYLE_ORIGINAL = int(StyleMode.ORIGINAL)
-STYLE_RSSTT = STYLE_AUTO
-STYLE_FLOWERSS = STYLE_AUTO
-STYLE_VALUES = {int(item) for item in StyleMode}
-
 SOURCE_TYPE_FEED = SourceType.FEED.value
 SOURCE_TYPE_AGENT = SourceType.AGENT.value
 SOURCE_TYPES = {item.value for item in SourceType}
@@ -227,22 +214,11 @@ QQ_OFFICIAL_MARKDOWN_MODE_OPTIONS = (
     QQ_OFFICIAL_MARKDOWN_MODE_PLAIN,
 )
 
-ALL_SUPPORTED_PLATFORMS = (
-    PlatformName.TELEGRAM.value,
-    PlatformName.ONEBOT.value,
-    PlatformName.QQ_OFFICIAL.value,
-    PlatformName.WEIXIN_OC.value,
-)
-
 SENDER_STRATEGY_ENABLED_PLATFORMS = (
     PlatformName.TELEGRAM.value,
     PlatformName.ONEBOT.value,
     PlatformName.QQ_OFFICIAL.value,
 )
-
-# Markdown 排版推送渠道配置：勾选使用 Markdown 的平台（默认仅 Telegram）。
-SENDER_MARKDOWN_PLATFORM_OPTIONS: tuple[str, ...] = ALL_SUPPORTED_PLATFORMS
-SENDER_MARKDOWN_PLATFORM_DEFAULT: tuple[str, ...] = (PlatformName.TELEGRAM.value,)
 
 PLATFORM_STRATEGY_TEMPLATE_KEYS: dict[str, str] = {
     PlatformName.TELEGRAM.value: PlatformStrategyTemplate.TELEGRAM.value,

@@ -36,9 +36,21 @@ from ..application.commands.test_subscription_cmd import TestSubscriptionCommand
 from ..application.commands.unsubscribe_feed_cmd import UnsubscribeFeedCommand
 from ..application.commands.update_subscription_cmd import UpdateSubscriptionCommand
 from ..application.queries.get_feed_items_query import GetFeedItemsQuery
+from ..application.queries.list_domain_util import feed_hostname
 from ..application.services.feed_polling_service import FeedPollingService
+from ..application.services.list_batch_coordinator import ListBatchCoordinator
+from ..application.services.list_queue_service import ListQueueService
 from ..application.services.notification_dispatcher import NotificationDispatcher
+from ..domain.entities.list_entities import (
+    LIST_CONTENT_MODE_FULL,
+    LIST_CONTENT_MODE_TITLE_LINK,
+    LIST_FULL_DELIVERY_AGGREGATE,
+    LIST_FULL_DELIVERY_SPLIT,
+    ListEntity,
+    normalize_keywords,
+)
 from ..domain.repositories.feed_repository import FeedRepository
+from ..domain.repositories.list_repository import ListRepository
 from ..domain.repositories.push_history_repository import PushHistoryRepository
 from ..domain.repositories.subscription_repository import SubscriptionRepository
 from ..domain.repositories.user_repository import UserRepository
@@ -98,6 +110,9 @@ class WebApiHandler:
         notification_dispatcher: NotificationDispatcher | None = None,
         config: RsshubPluginConfig | None = None,
         raw_config: AstrBotConfig | None = None,
+        list_queue_service: ListQueueService | None = None,
+        list_repo: ListRepository | None = None,
+        list_batch_coordinator: ListBatchCoordinator | None = None,
     ):
         self._sse_clients: list[asyncio.Queue] = []
         self._change_counter: int = 0
@@ -120,6 +135,9 @@ class WebApiHandler:
         self._user_repo = user_repo
         self._push_history_repo = push_history_repo
         self._notification_dispatcher = notification_dispatcher
+        self._list_queue_service = list_queue_service
+        self._list_repo = list_repo
+        self._list_batch_coordinator = list_batch_coordinator
         self._config = config
         self._raw_config = raw_config
 
@@ -244,6 +262,36 @@ class WebApiHandler:
             ("GET", "/users/detail", self.handle_user_details, "用户详情列表"),
             ("POST", "/users/update", self.handle_update_user, "更新用户配置"),
             ("POST", "/users/delete", self.handle_delete_user, "删除用户"),
+            ("GET", "/lists", self.handle_lists, "列出所有 List"),
+            ("POST", "/lists/create", self.handle_create_list, "创建 List"),
+            ("POST", "/lists/update", self.handle_update_list, "更新 List"),
+            ("POST", "/lists/delete", self.handle_delete_list, "删除 List"),
+            (
+                "POST",
+                "/lists/move-subscriptions",
+                self.handle_move_subscriptions,
+                "移动订阅到 List",
+            ),
+            (
+                "GET",
+                "/lists/eligible-subscriptions",
+                self.handle_eligible_subscriptions,
+                "可加入 List 的订阅（按域名分组）",
+            ),
+            ("GET", "/lists/batches", self.handle_list_batches, "List 批次列表"),
+            (
+                "POST",
+                "/lists/batches/retry",
+                self.handle_retry_batch,
+                "重试失败批次",
+            ),
+            ("POST", "/lists/flush", self.handle_flush_list, "立即推送 List 队列"),
+            (
+                "POST",
+                "/lists/clear-queue",
+                self.handle_clear_queue,
+                "清空 List 队列",
+            ),
         ]
 
         for method, endpoint, handler, desc in routes:
@@ -341,6 +389,10 @@ class WebApiHandler:
                     "feed_id": s.feed_id,
                     "feed_title": feed.title if feed else "",
                     "feed_link": feed.link if feed else "",
+                    "feed_hostname": feed_hostname(feed.link if feed else ""),
+                    "list_id": getattr(s, "list_id", None),
+                    "include_keywords": getattr(s, "include_keywords", None),
+                    "exclude_keywords": getattr(s, "exclude_keywords", None),
                     "title": s.title,
                     "tags": s.tags,
                     "target_session": s.target_session,
@@ -353,7 +405,6 @@ class WebApiHandler:
                     "display_via": s.display_via,
                     "display_title": s.display_title,
                     "display_entry_tags": s.display_entry_tags,
-                    "style": s.style,
                     "display_media": s.display_media,
                     "created_at": s.created_at.isoformat() if s.created_at else None,
                     "updated_at": s.updated_at.isoformat() if s.updated_at else None,
@@ -487,7 +538,6 @@ class WebApiHandler:
                     "display_via": u.display_via,
                     "display_title": u.display_title,
                     "display_entry_tags": u.display_entry_tags,
-                    "style": u.style,
                     "display_media": u.display_media,
                     "default_target_session": u.default_target_session,
                     "subscription_count": subscription_counts.get(u.id, {}).get(
@@ -542,6 +592,8 @@ class WebApiHandler:
         deleted_push_history = 0
         for user_id in user_ids:
             sub_deleted = await self._sub_repo.delete_all_by_user(user_id)
+            if self._list_queue_service is not None:
+                await self._list_queue_service.cleanup_user(user_id)
             history_deleted = 0
             if delete_push_history:
                 history_deleted = await self._push_history_repo.delete_by_user(user_id)
@@ -884,6 +936,9 @@ class WebApiHandler:
 
         delete_push_history = bool(data.get("delete_push_history")) if data else False
         deleted_subscriptions = await self._sub_repo.delete_all_by_feed_ids(feed_ids)
+        if self._list_queue_service is not None:
+            for feed_id in feed_ids:
+                await self._list_queue_service.cleanup_feed(feed_id)
         deleted_push_history = 0
         if delete_push_history:
             deleted_push_history = await self._push_history_repo.delete_by_feed_ids(
@@ -1868,6 +1923,390 @@ class WebApiHandler:
                 "message": f"已清空 {count} 条记录",
             }
         )
+
+    # ─── List 管理 ────────────────────────────────────────────
+
+    @staticmethod
+    def _list_mode_error() -> Any:
+        return jsonify({"ok": False, "error": "List 功能未启用"})
+
+    @staticmethod
+    def _normalize_list_payload(
+        data: dict[str, Any] | None,
+    ) -> tuple[dict[str, Any], str]:
+        payload = dict(data or {})
+        name = str(payload.get("name") or "").strip()
+        if not name:
+            return {}, "List 名称不能为空"
+        user_id = str(payload.get("user_id") or "").strip()
+        if not user_id:
+            return {}, "user_id 不能为空"
+        target_session = str(payload.get("target_session") or "").strip()
+        if not target_session:
+            return {}, "target_session 不能为空"
+        return payload, ""
+
+    async def handle_lists(self):
+        """列出所有 List 及订阅数/排队数/最近批次状态。"""
+        if self._list_repo is None:
+            return self._list_mode_error()
+        lists = await self._list_repo.get_all_lists()
+        items = []
+        for lst in lists:
+            queued = await self._list_repo.count_queued(lst.id)
+            oldest = await self._list_repo.oldest_queued_at(lst.id)
+            batches = await self._list_repo.list_batches(lst.id, limit=1)
+            list_subs = await self._sub_repo.get_by_list(lst.id)
+            items.append(
+                {
+                    "id": lst.id,
+                    "name": lst.name,
+                    "user_id": lst.user_id,
+                    "target_session": lst.target_session,
+                    "platform_name": lst.platform_name,
+                    "state": lst.state,
+                    "batch_size": lst.batch_size,
+                    "max_wait_minutes": lst.max_wait_minutes,
+                    "content_mode": lst.content_mode,
+                    "full_delivery_mode": lst.full_delivery_mode,
+                    "ai_summary_enabled": lst.ai_summary_enabled,
+                    "ai_summary_prompt": lst.ai_summary_prompt,
+                    "include_keywords": lst.include_keywords,
+                    "exclude_keywords": lst.exclude_keywords,
+                    "subscription_count": len(list_subs),
+                    "queued_count": queued,
+                    "oldest_queued_at": oldest.isoformat() if oldest else None,
+                    "last_batch_state": batches[0].state if batches else None,
+                }
+            )
+        return jsonify({"ok": True, "items": items, "total": len(items)})
+
+    async def handle_create_list(self):
+        """创建 List。"""
+        if self._list_repo is None:
+            return self._list_mode_error()
+        data = await request.get_json()
+        payload, error = self._normalize_list_payload(data)
+        if error:
+            return jsonify({"ok": False, "error": error})
+        try:
+            batch_size = int(payload.get("batch_size", 10) or 10)
+            max_wait_minutes = int(payload.get("max_wait_minutes", 120) or 120)
+        except (TypeError, ValueError):
+            return jsonify({"ok": False, "error": "batch_size/max_wait_minutes 必须是整数"})
+        if batch_size <= 0 or max_wait_minutes <= 0:
+            return jsonify({"ok": False, "error": "batch_size/max_wait_minutes 必须大于 0"})
+        content_mode = str(payload.get("content_mode") or LIST_CONTENT_MODE_FULL).strip()
+        full_delivery_mode = str(
+            payload.get("full_delivery_mode") or LIST_FULL_DELIVERY_SPLIT
+        ).strip()
+        if content_mode not in (LIST_CONTENT_MODE_TITLE_LINK, LIST_CONTENT_MODE_FULL):
+            return jsonify({"ok": False, "error": "content_mode 不合法"})
+        if full_delivery_mode not in (
+            LIST_FULL_DELIVERY_SPLIT,
+            LIST_FULL_DELIVERY_AGGREGATE,
+        ):
+            return jsonify({"ok": False, "error": "full_delivery_mode 不合法"})
+        # 同作用域下名称唯一
+        existing = await self._list_repo.get_lists_by_scope(
+            payload["user_id"], payload["target_session"], payload.get("platform_name", "")
+        )
+        if any(e.name == payload["name"] for e in existing):
+            return jsonify({"ok": False, "error": "同一会话下已存在同名 List"})
+        entity = ListEntity(
+            name=payload["name"],
+            user_id=payload["user_id"],
+            target_session=payload["target_session"],
+            platform_name=str(payload.get("platform_name") or "").strip(),
+            batch_size=batch_size,
+            max_wait_minutes=max_wait_minutes,
+            content_mode=content_mode,
+            full_delivery_mode=full_delivery_mode,
+            ai_summary_enabled=bool(payload.get("ai_summary_enabled", False)),
+            ai_summary_prompt=str(payload.get("ai_summary_prompt") or "").strip(),
+            include_keywords=normalize_keywords(payload.get("include_keywords")),
+            exclude_keywords=normalize_keywords(payload.get("exclude_keywords")),
+        )
+        saved = await self._list_repo.save_list(entity)
+        self._bump_counter()
+        asyncio.create_task(self._broadcast({"event": "data_changed"}))
+        return jsonify({"ok": True, "id": saved.id, "message": "List 已创建"})
+
+    async def handle_update_list(self):
+        """更新 List 可编辑字段。"""
+        if self._list_repo is None:
+            return self._list_mode_error()
+        data = await request.get_json()
+        if not isinstance(data, dict):
+            return jsonify({"ok": False, "error": "请求体不能为空"})
+        try:
+            list_id = int(data.get("list_id") or 0)
+        except (TypeError, ValueError):
+            list_id = 0
+        lst = await self._list_repo.get_list(list_id)
+        if lst is None:
+            return jsonify({"ok": False, "error": "List 不存在"})
+        if "name" in data:
+            name = str(data.get("name") or "").strip()
+            if not name:
+                return jsonify({"ok": False, "error": "List 名称不能为空"})
+            lst.name = name
+        if "batch_size" in data:
+            try:
+                value = int(data.get("batch_size"))
+            except (TypeError, ValueError):
+                return jsonify({"ok": False, "error": "batch_size 必须是整数"})
+            if value <= 0:
+                return jsonify({"ok": False, "error": "batch_size 必须大于 0"})
+            lst.batch_size = value
+        if "max_wait_minutes" in data:
+            try:
+                value = int(data.get("max_wait_minutes"))
+            except (TypeError, ValueError):
+                return jsonify({"ok": False, "error": "max_wait_minutes 必须是整数"})
+            if value <= 0:
+                return jsonify({"ok": False, "error": "max_wait_minutes 必须大于 0"})
+            lst.max_wait_minutes = value
+        if "content_mode" in data:
+            value = str(data.get("content_mode") or "").strip()
+            if value not in (LIST_CONTENT_MODE_TITLE_LINK, LIST_CONTENT_MODE_FULL):
+                return jsonify({"ok": False, "error": "content_mode 不合法"})
+            lst.content_mode = value
+        if "full_delivery_mode" in data:
+            value = str(data.get("full_delivery_mode") or "").strip()
+            if value not in (
+                LIST_FULL_DELIVERY_SPLIT,
+                LIST_FULL_DELIVERY_AGGREGATE,
+            ):
+                return jsonify({"ok": False, "error": "full_delivery_mode 不合法"})
+            lst.full_delivery_mode = value
+        if "state" in data:
+            try:
+                state_value = int(data.get("state"))
+            except (TypeError, ValueError):
+                return jsonify({"ok": False, "error": "state 必须是整数"})
+            lst.state = 1 if state_value == 1 else 0
+        if "ai_summary_enabled" in data:
+            lst.ai_summary_enabled = bool(data.get("ai_summary_enabled"))
+        if "ai_summary_prompt" in data:
+            lst.ai_summary_prompt = str(data.get("ai_summary_prompt") or "").strip()
+        if "include_keywords" in data:
+            lst.include_keywords = normalize_keywords(data.get("include_keywords"))
+        if "exclude_keywords" in data:
+            lst.exclude_keywords = normalize_keywords(data.get("exclude_keywords"))
+        await self._list_repo.save_list(lst)
+        self._bump_counter()
+        asyncio.create_task(self._broadcast({"event": "data_changed"}))
+        return jsonify({"ok": True, "message": "List 已更新"})
+
+    async def handle_delete_list(self):
+        """删除 List。delete_subscriptions=true 时同时删除订阅，否则仅解散。"""
+        if self._list_repo is None:
+            return self._list_mode_error()
+        data = await request.get_json()
+        if not isinstance(data, dict):
+            return jsonify({"ok": False, "error": "请求体不能为空"})
+        try:
+            list_id = int(data.get("list_id") or 0)
+        except (TypeError, ValueError):
+            list_id = 0
+        lst = await self._list_repo.get_list(list_id)
+        if lst is None:
+            return jsonify({"ok": False, "error": "List 不存在"})
+        delete_subscriptions = bool(data.get("delete_subscriptions", False))
+        list_subs = await self._sub_repo.get_by_list(list_id)
+        if delete_subscriptions:
+            for sub in list_subs:
+                if sub.id is not None:
+                    await self._sub_repo.delete(sub)
+                    if self._list_queue_service is not None:
+                        await self._list_queue_service.cleanup_subscription(sub.id)
+        else:
+            for sub in list_subs:
+                if sub.id is not None:
+                    await self._sub_repo.update_options(
+                        sub.id, sub.user_id, list_id=None
+                    )
+            # 仅解散：队列项保留在原批次，不清理。
+        await self._list_repo.delete_list(list_id)
+        self._bump_counter()
+        asyncio.create_task(self._broadcast({"event": "data_changed"}))
+        mode = "同时删除订阅" if delete_subscriptions else "仅解散，订阅恢复即时推送"
+        return jsonify({"ok": True, "message": f"List 已删除（{mode}）"})
+
+    async def handle_move_subscriptions(self):
+        """把订阅移动到目标 List。"""
+        if self._list_repo is None:
+            return self._list_mode_error()
+        data = await request.get_json()
+        if not isinstance(data, dict):
+            return jsonify({"ok": False, "error": "请求体不能为空"})
+        try:
+            target_list_id = int(data.get("target_list_id") or 0)
+        except (TypeError, ValueError):
+            target_list_id = 0
+        sub_ids = _coerce_int_values(data.get("sub_ids"))
+        if target_list_id <= 0 or not sub_ids:
+            return jsonify({"ok": False, "error": "target_list_id 与 sub_ids 不能为空"})
+        target = await self._list_repo.get_list(target_list_id)
+        if target is None:
+            return jsonify({"ok": False, "error": "目标 List 不存在"})
+        moved = 0
+        for sub_id in sub_ids:
+            sub = await self._sub_repo.get_by_id(sub_id)
+            if sub is None:
+                continue
+            # 归属兼容：user/target_session/platform 一致才可移动
+            if sub.user_id != target.user_id:
+                continue
+            if (sub.target_session or "") != (target.target_session or ""):
+                continue
+            if (sub.platform_name or "") != (target.platform_name or ""):
+                continue
+            await self._sub_repo.update_options(
+                sub_id, sub.user_id, list_id=target_list_id
+            )
+            moved += 1
+        self._bump_counter()
+        asyncio.create_task(self._broadcast({"event": "data_changed"}))
+        return jsonify(
+            {"ok": True, "moved": moved, "message": f"已移动 {moved} 个订阅"}
+        )
+
+    async def handle_eligible_subscriptions(self):
+        """返回按域名分组的可加入订阅（同 scope 且未加入其他 List）。"""
+        if self._list_repo is None:
+            return self._list_mode_error()
+        list_ids = _query_int_values("list_id")
+        list_id = list_ids[0] if list_ids else 0
+        if list_id <= 0:
+            return jsonify({"ok": False, "error": "list_id 不能为空"})
+        lst = await self._list_repo.get_list(list_id)
+        if lst is None:
+            return jsonify({"ok": False, "error": "List 不存在"})
+        subs = await self._sub_repo.list_for_dashboard(user_ids=[lst.user_id])
+        feed_ids = {s.feed_id for s in subs if s.feed_id}
+        feeds: dict[int, Any] = {}
+        for fid in feed_ids:
+            feed = await self._feed_repo.get_by_id(fid)
+            if feed:
+                feeds[fid] = feed
+        eligible: list[dict[str, Any]] = []
+        for s in subs:
+            if s.list_id not in (None, list_id):
+                continue
+            if (s.target_session or "") != (lst.target_session or ""):
+                continue
+            if (s.platform_name or "") != (lst.platform_name or ""):
+                continue
+            feed = feeds.get(s.feed_id)
+            eligible.append(
+                {
+                    "id": s.id,
+                    "feed_id": s.feed_id,
+                    "feed_title": feed.title if feed else "",
+                    "feed_link": feed.link if feed else "",
+                    "domain": feed_hostname(feed.link if feed else ""),
+                    "in_list": s.list_id is not None,
+                }
+            )
+        grouped: dict[str, list[dict[str, Any]]] = {}
+        for item in eligible:
+            grouped.setdefault(item["domain"], []).append(item)
+        return jsonify(
+            {"ok": True, "groups": grouped, "total": len(eligible)}
+        )
+
+    async def handle_list_batches(self):
+        """列出 List 的批次。"""
+        if self._list_repo is None:
+            return self._list_mode_error()
+        list_ids = _query_int_values("list_id")
+        list_id = list_ids[0] if list_ids else 0
+        if list_id <= 0:
+            return jsonify({"ok": False, "error": "list_id 不能为空"})
+        batches = await self._list_repo.list_batches(list_id, limit=50)
+        items = []
+        for batch in batches:
+            parts = await self._list_repo.get_parts(batch.id)
+            items.append(
+                {
+                    "id": batch.id,
+                    "list_id": batch.list_id,
+                    "state": batch.state,
+                    "item_count": batch.item_count,
+                    "summary_status": batch.summary_status,
+                    "fail_reason": batch.fail_reason,
+                    "created_at": batch.created_at.isoformat() if batch.created_at else None,
+                    "completed_at": batch.completed_at.isoformat() if batch.completed_at else None,
+                    "part_count": len(parts),
+                    "success_parts": sum(1 for p in parts if p.state == "success"),
+                }
+            )
+        return jsonify({"ok": True, "items": items, "total": len(items)})
+
+    async def handle_retry_batch(self):
+        """重试失败批次。"""
+        if self._list_batch_coordinator is None:
+            return jsonify({"ok": False, "error": "List 批次协调器未启用"})
+        data = await request.get_json()
+        if not isinstance(data, dict):
+            return jsonify({"ok": False, "error": "请求体不能为空"})
+        try:
+            batch_id = int(data.get("batch_id") or 0)
+        except (TypeError, ValueError):
+            batch_id = 0
+        if batch_id <= 0:
+            return jsonify({"ok": False, "error": "batch_id 不能为空"})
+        await self._list_batch_coordinator.retry_batch(batch_id)
+        return jsonify({"ok": True, "message": "批次已加入重试"})
+
+    async def handle_flush_list(self):
+        """立即把 List 队列 claim 为一个批次发送。"""
+        if self._list_batch_coordinator is None:
+            return jsonify({"ok": False, "error": "List 批次协调器未启用"})
+        data = await request.get_json()
+        if not isinstance(data, dict):
+            return jsonify({"ok": False, "error": "请求体不能为空"})
+        try:
+            list_id = int(data.get("list_id") or 0)
+        except (TypeError, ValueError):
+            list_id = 0
+        if list_id <= 0:
+            return jsonify({"ok": False, "error": "list_id 不能为空"})
+        count = await self._list_batch_coordinator.flush_list(list_id)
+        return jsonify(
+            {"ok": True, "flushed": count, "message": f"已推送 {count} 条" if count else "队列为空"}
+        )
+
+    async def handle_clear_queue(self):
+        """清空 List 队列（把 queued/claimed 置为 skipped）。"""
+        if self._list_queue_service is None or self._list_repo is None:
+            return jsonify({"ok": False, "error": "List 功能未启用"})
+        data = await request.get_json()
+        if not isinstance(data, dict):
+            return jsonify({"ok": False, "error": "请求体不能为空"})
+        try:
+            list_id = int(data.get("list_id") or 0)
+        except (TypeError, ValueError):
+            list_id = 0
+        if list_id <= 0:
+            return jsonify({"ok": False, "error": "list_id 不能为空"})
+        cleared = await self._list_queue_service.clear_queue(list_id)
+        self._bump_counter()
+        asyncio.create_task(self._broadcast({"event": "data_changed"}))
+        return jsonify({"ok": True, "cleared": cleared, "message": f"已清空 {cleared} 条"})
+
+    @staticmethod
+    def _list_dump(entity: Any) -> dict[str, Any]:
+        return {
+            "id": entity.id,
+            "name": entity.name,
+            "user_id": entity.user_id,
+            "target_session": entity.target_session,
+            "platform_name": entity.platform_name,
+            "state": entity.state,
+        }
 
 
 def _dump_dataclass_like(value: Any) -> dict[str, Any]:

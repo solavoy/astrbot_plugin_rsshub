@@ -12,7 +12,6 @@
 | 配置继承标记 | `-100` | 订阅继承用户配置，用户继承全局默认 | 不恢复 `use_sub_config` / `use_user_config`。 |
 | 用户状态 | `1` / `-1` | `USER_STATE_USER` / `USER_STATE_BANNED` | 旧非负状态统一视为普通用户。 |
 | `send_mode` | `-1` / `0` / `1` | 仅链接 / 自动 / 直接发送 | 旧 `1=Telegraph` 归一化为 `0`，旧 `2=直接消息` 归一化为 `1`。 |
-| `style` | `0` / `1` / `2` | 自动或平台经典 / RSSRT / original | 旧 `flowerss=1` 迁移为 `0`，不恢复 flowerss UI 文案。 |
 | 显示类字段 | 整数状态 | `display_author`、`display_via`、`display_title`、`display_entry_tags`、`display_media` | 需要支持继承，不能简化为 `true/false`。 |
 | `source_type` | `feed` / `agent` | 普通订阅轮询或测试推送 / AI tool 或 XML 即时推送 | `source_key` 必须稳定表达去重范围。 |
 
@@ -61,7 +60,7 @@ subscription option
 
 | 放置位置 | 适合内容 | 不适合内容 |
 | --- | --- | --- |
-| `src/shared/constants.py` | 跨 domain / application / infrastructure 共同使用的领域值；平台限制或可能随平台调整的默认策略；sender strategy 公共枚举候选；用户状态、继承值、发送模式、排版策略等稳定语义 | 单个函数内部实现细节；缓存 GC 间隔；媒体完整性最小字节数；只在单个模块内部使用且不会形成跨层契约的局部值。 |
+| `src/shared/constants.py` | 跨 domain / application / infrastructure 共同使用的领域值；平台限制或可能随平台调整的默认策略；sender strategy 公共枚举候选；用户状态、继承值、发送模式等稳定语义 | 单个函数内部实现细节；缓存 GC 间隔；媒体完整性最小字节数；只在单个模块内部使用且不会形成跨层契约的局部值。 |
 | 具体实现或运行时设置附近 | 固定实现细节、局部运行参数、单模块私有值 | 会被多层依赖或形成持久化 / API 语义的值。 |
 
 ## 配置面边界

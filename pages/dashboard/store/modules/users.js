@@ -90,7 +90,6 @@ export const usersModule = {
       display_via: user.display_via ?? -100,
       display_title: user.display_title ?? -100,
       display_entry_tags: user.display_entry_tags ?? -100,
-      style: user.style ?? -100,
       display_media: user.display_media ?? -100,
     };
     this.userEditPanelVisible = true;
@@ -112,7 +111,6 @@ export const usersModule = {
         display_via: this.userEditForm.display_via,
         display_title: this.userEditForm.display_title,
         display_entry_tags: this.userEditForm.display_entry_tags,
-        style: this.userEditForm.style,
         display_media: this.userEditForm.display_media,
       };
       await updateUser(this.userEditForm.user_id, settings);

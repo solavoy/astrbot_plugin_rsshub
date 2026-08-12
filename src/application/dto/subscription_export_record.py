@@ -23,7 +23,6 @@ SUBSCRIPTION_EXPORT_INT_FIELDS = {
     "display_via",
     "display_title",
     "display_entry_tags",
-    "style",
     "display_media",
     "interval",
 }

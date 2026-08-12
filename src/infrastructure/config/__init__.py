@@ -18,6 +18,7 @@ from .config_loader import (
     validate_interval_value,
 )
 from .models import (
+    AiSummarySettings,
     ApplicationSettings,
     BasicConfig,
     BasicSettings,
@@ -39,6 +40,8 @@ from .models import (
 )
 
 __all__ = [
+    "MAX_INTERVAL_MINUTES",
+    "AiSummarySettings",
     "ApplicationSettings",
     "BasicConfig",
     "BasicSettings",
@@ -46,7 +49,6 @@ __all__ = [
     "GlobalConfig",
     "HttpConfig",
     "HttpSettings",
-    "MAX_INTERVAL_MINUTES",
     "MediaConfig",
     "MediaPlatformLimits",
     "MediaSettings",

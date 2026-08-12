@@ -263,7 +263,8 @@ async def test_poll_feed_dispatches_new_entries_when_enabled():
         "content"
     ]
     assert (
-        "via https://example.com/1 | https://example.com/rss.xml" in dispatched_content
+        "via [https://example\\.com/1](https://example\\.com/1) | "
+        "https://example\\.com/rss\\.xml" in dispatched_content
     )
 
 
@@ -466,8 +467,8 @@ async def test_poll_feed_dispatches_parsed_entry_without_content_processing():
     assert call_kwargs["entry_title"] == "Title"
     assert "Summary" in call_kwargs["content"]
     assert (
-        "via https://example.com/1 | Timeline (author: Author)"
-        in call_kwargs["content"]
+        "via [https://example\\.com/1](https://example\\.com/1) | "
+        "Timeline (author: Author)" in call_kwargs["content"]
     )
     assert call_kwargs["media_urls"] == []
     assert call_kwargs["raw_entry"].raw_xml == entry.raw_xml
@@ -521,8 +522,8 @@ async def test_poll_feed_dispatch_parses_html_summary_and_media():
     assert "<img" not in call_kwargs["content"]
     assert "Body" in call_kwargs["content"]
     assert (
-        "via https://example.com/1 | Timeline (author: Author)"
-        in call_kwargs["content"]
+        "via [https://example\\.com/1](https://example\\.com/1) | "
+        "Timeline (author: Author)" in call_kwargs["content"]
     )
     assert call_kwargs["media_urls"] == ["https://example.com/image.jpg"]
 
@@ -639,8 +640,8 @@ async def test_poll_feed_dispatch_preserves_video_media_without_text_placeholder
     assert "Body" in call_kwargs["content"]
     assert "[视频]" not in call_kwargs["content"]
     assert (
-        "via https://example.com/1 | Timeline (author: Author)"
-        in call_kwargs["content"]
+        "via [https://example\\.com/1](https://example\\.com/1) | "
+        "Timeline (author: Author)" in call_kwargs["content"]
     )
     assert call_kwargs["media_urls"] == [video_url]
     assert call_kwargs["media_items"] == [("video", video_url)]

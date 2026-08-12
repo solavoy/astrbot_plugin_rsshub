@@ -304,23 +304,6 @@
           "type": "string"
         }
       },
-      "markdown_platforms": {
-        "type": "list",
-        "description": "使用 Markdown 排版的消息渠道",
-        "hint": "勾选使用 Markdown 排版的渠道（标题加粗、可点击 via 链接、--- 分隔线）。Telegram 原生支持 Markdown 渲染；QQ/微信 等渠道不渲染 Markdown，会显示 **粗体**、[链接](url) 等原始语法。默认仅 Telegram。",
-        "default": [
-          "telegram"
-        ],
-        "options": [
-          "telegram",
-          "aiocqhttp",
-          "qq_official",
-          "weixin_oc"
-        ],
-        "items": {
-          "type": "string"
-        }
-      },
       "platform_strategies": {
         "type": "template_list",
         "description": "平台策略模板",
@@ -380,6 +363,20 @@
             }
           }
         }
+      }
+    }
+  },
+  "ai_summary": {
+    "type": "object",
+    "description": "List AI 总结配置",
+    "hint": "List 批次 AI 总结使用的模型；留空时使用 List 目标会话当前 Provider",
+    "items": {
+      "ai_provider_id": {
+        "type": "string",
+        "description": "List AI 总结模型",
+        "hint": "留空时使用 List 目标会话当前正在使用的对话模型 Provider",
+        "_special": "select_provider",
+        "default": ""
       }
     }
   }

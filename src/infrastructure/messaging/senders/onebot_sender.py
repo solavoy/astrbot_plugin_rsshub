@@ -149,18 +149,6 @@ class OneBotMessageSender(DefaultMessageSender):
 
             napcat_mode = self._napcat_stream_mode(context)
 
-            if self._is_original_style(context) and request.layout:
-                return await self._send_components_in_order(
-                    session_id,
-                    self._layout_to_components(
-                        request, prepared_media_by_url=prepared_media_by_url
-                    ),
-                    combine_image_text=True,
-                    default_text=request.message,
-                    prepared_media_by_url=prepared_media_by_url,
-                    platform="onebot",
-                )
-
             bot_client = self._resolve_bot_client(context)
             bot_self_id = self._resolve_bot_self_id(context)
 

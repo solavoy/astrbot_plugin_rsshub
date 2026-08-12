@@ -25,7 +25,6 @@ def build_xml_push_tools(*, deps: LLMToolDeps, plugin_context) -> list[FunctionT
         entry_guid: str = "",
         idempotency_key: str = "",
         dry_run: bool = False,
-        style: Any = None,
         send_mode: Any = None,
         display_media: Any = None,
         display_title: Any = None,
@@ -53,7 +52,6 @@ def build_xml_push_tools(*, deps: LLMToolDeps, plugin_context) -> list[FunctionT
                 entry_guid=entry_guid,
                 idempotency_key=idempotency_key,
                 dry_run=bool(dry_run),
-                style=style,
                 send_mode=send_mode,
                 display_media=display_media,
                 display_title=display_title,
@@ -93,11 +91,6 @@ def build_xml_push_tools(*, deps: LLMToolDeps, plugin_context) -> list[FunctionT
                         "description": "可选显式幂等键",
                     },
                     "dry_run": {"type": "boolean", "description": "仅解析预览，不发送"},
-                    "style": {
-                        "type": "string",
-                        "enum": ["auto", "rssrt", "original"],
-                        "description": "可选推送样式；original 会尽量按 XML/HTML 原始布局推送。",
-                    },
                     "send_mode": {
                         "type": "string",
                         "enum": ["auto", "link_only", "direct"],

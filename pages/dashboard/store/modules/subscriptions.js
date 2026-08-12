@@ -238,8 +238,10 @@ export const subscriptionsModule = {
       options.display_via = this.editForm.display_via;
       options.display_title = this.editForm.display_title;
       options.display_entry_tags = this.editForm.display_entry_tags;
-      options.style = this.editForm.style;
       options.display_media = this.editForm.display_media;
+      options.list_id = this.editForm.list_id || 0;
+      options.include_keywords = this.toKeywordList(this.editForm.include_keywords);
+      options.exclude_keywords = this.toKeywordList(this.editForm.exclude_keywords);
 
       await updateSubscription(this.editForm.id, options, this.currentSubUserId());
       this.showToast('订阅已更新');
@@ -270,5 +272,18 @@ export const subscriptionsModule = {
     }).catch((err) => {
       this.showToast(`删除失败: ${err.message}`, 'error');
     });
+  },
+
+  toKeywordList(value) {
+    if (!value) return [];
+    return String(value)
+      .split(/[,，\n]+/)
+      .map((item) => item.trim())
+      .filter(Boolean);
+  },
+
+  listNameById(listId) {
+    const match = this.lists.find((list) => list.id === listId);
+    return match ? match.name : '';
   }
 };

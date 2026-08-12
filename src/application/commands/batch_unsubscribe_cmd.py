@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any
 
 from ...domain.repositories.subscription_repository import SubscriptionRepository
 from ..dto.result_dto import CommandResult
@@ -36,8 +37,13 @@ class BatchUnsubscribeCommand:
     处理用户批量取消订阅 RSS 源的业务用例。
     """
 
-    def __init__(self, subscription_repo: SubscriptionRepository):
+    def __init__(
+        self,
+        subscription_repo: SubscriptionRepository,
+        list_queue_service: Any = None,
+    ):
         self._subscription_repo = subscription_repo
+        self._list_queue_service = list_queue_service
 
     async def execute(
         self,
@@ -127,6 +133,8 @@ class BatchUnsubscribeCommand:
             )
 
         await self._subscription_repo.delete(subscription)
+        if self._list_queue_service is not None:
+            await self._list_queue_service.cleanup_subscription(sub_id)
 
         return BatchUnsubscribeItem(
             sub_id=sub_id,

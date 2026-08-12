@@ -80,7 +80,6 @@ class GlobalConfig(BaseModel):
     display_via: str = Field(default="自动", description="显示来源")
     display_title: str = Field(default="自动", description="显示标题")
     display_entry_tags: bool = Field(default=False, description="显示标签")
-    style: str = Field(default="auto", description="推送排版策略")
     display_media: bool = Field(default=True, description="显示媒体")
 
     _SEND_MODE_MAP: ClassVar[dict[str, int]] = {"仅链接": -1, "自动": 0, "直接发送": 1}
@@ -95,15 +94,6 @@ class GlobalConfig(BaseModel):
         "禁用": -1,
         "自动": 0,
         "强制": 1,
-    }
-    _STYLE_MAP: ClassVar[dict[str, int]] = {
-        "auto": 0,
-        "classic": 0,
-        "RSStT": 0,
-        "rssrt": 1,
-        "RSSRT": 1,
-        "flowerss": 0,
-        "original": 2,
     }
 
     _SEND_MODE_RMAP: ClassVar[dict[int, str]] = {-1: "仅链接", 0: "自动", 1: "直接发送"}
@@ -123,7 +113,6 @@ class GlobalConfig(BaseModel):
         0: "自动",
         1: "强制",
     }
-    _STYLE_RMAP: ClassVar[dict[int, str]] = {0: "auto", 1: "rssrt", 2: "original"}
 
     def to_db_values(self) -> dict[str, Any]:
         return {
@@ -135,7 +124,6 @@ class GlobalConfig(BaseModel):
             "display_via": self._DISPLAY_VIA_MAP.get(self.display_via, 0),
             "display_title": self._DISPLAY_TITLE_MAP.get(self.display_title, 0),
             "display_entry_tags": -1 if not self.display_entry_tags else 0,
-            "style": self._STYLE_MAP.get(self.style, 0),
             "display_media": -1 if not self.display_media else 0,
         }
 
@@ -169,7 +157,6 @@ class GlobalConfig(BaseModel):
                 values.get("display_title", 0), "自动"
             ),
             display_entry_tags=values.get("display_entry_tags", -1) != -1,
-            style=cls._STYLE_RMAP.get(values.get("style", 0), "auto"),
             display_media=values.get("display_media", 0) != -1,
         )
 

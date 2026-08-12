@@ -49,8 +49,12 @@ class Subscription(BaseModel):
     display_via: int = Field(default=INHERIT_VALUE, description="显示来源")
     display_title: int = Field(default=INHERIT_VALUE, description="显示标题")
     display_entry_tags: int = Field(default=INHERIT_VALUE, description="显示标签")
-    style: int = Field(default=INHERIT_VALUE, description="推送排版策略")
     display_media: int = Field(default=INHERIT_VALUE, description="显示媒体")
+
+    list_id: int | None = Field(default=None, description="所属 List ID")
+    include_keywords: list[str] | None = Field(default=None, description="订阅关注词")
+    exclude_keywords: list[str] | None = Field(default=None, description="订阅屏蔽词")
+
     created_at: datetime = Field(
         default_factory=lambda: datetime.now(timezone.utc), description="创建时间"
     )

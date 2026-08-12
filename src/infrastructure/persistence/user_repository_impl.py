@@ -59,7 +59,6 @@ class UserRepositoryImpl:
                 orm.display_via = updated_orm.display_via
                 orm.display_title = updated_orm.display_title
                 orm.display_entry_tags = updated_orm.display_entry_tags
-                orm.style = updated_orm.style
                 orm.display_media = updated_orm.display_media
                 orm.default_target_session = updated_orm.default_target_session
                 orm.needs_binding_notice = updated_orm.needs_binding_notice
@@ -118,7 +117,6 @@ class UserRepositoryImpl:
             display_via=orm.display_via,
             display_title=orm.display_title,
             display_entry_tags=orm.display_entry_tags,
-            style=orm.style,
             display_media=orm.display_media,
             default_target_session=orm.default_target_session,
             needs_binding_notice=orm.needs_binding_notice,
@@ -140,7 +138,6 @@ class UserRepositoryImpl:
             display_via=user.display_via,
             display_title=user.display_title,
             display_entry_tags=user.display_entry_tags,
-            style=user.style,
             display_media=user.display_media,
             default_target_session=user.default_target_session,
             needs_binding_notice=user.needs_binding_notice,

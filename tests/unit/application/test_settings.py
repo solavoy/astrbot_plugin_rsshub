@@ -382,7 +382,6 @@ def test_heal_astrbot_plugin_config_projects_dirty_config_to_schema():
     assert "content_handlers" not in healed
     assert healed["sender_strategies"] == {
         "enabled_platforms": ["telegram", "aiocqhttp", "qq_official"],
-        "markdown_platforms": ["telegram"],
         "platform_strategies": [],
     }
 
@@ -426,6 +425,10 @@ def test_heal_astrbot_plugin_config_returns_no_changes_for_clean_config():
         "sender_strategies": {
             key: value["default"]
             for key, value in schema["sender_strategies"]["items"].items()
+        },
+        "ai_summary": {
+            key: value["default"]
+            for key, value in schema["ai_summary"]["items"].items()
         },
     }
 
@@ -491,38 +494,12 @@ def test_sender_strategies_parse_nested_enabled_platforms_config():
     assert config.sender_strategies.qq_official is True
 
 
-def test_sender_strategies_markdown_platforms_roundtrip_and_defaults():
+def test_sender_strategies_no_markdown_platforms_field():
     from astrbot_plugin_rsshub.src.infrastructure.config import RsshubPluginConfig
 
-    # 缺省：仅 Telegram 使用 Markdown
     config = RsshubPluginConfig.from_astrbot_config({})
-    assert config.sender_strategies.markdown_platforms == ["telegram"]
-
-    # 勾选 telegram + aiocqhttp 后 to_config_dict 保留勾选
-    config = RsshubPluginConfig.from_astrbot_config(
-        {
-            "sender_strategies": {
-                "enabled_platforms": ["telegram", "aiocqhttp"],
-                "markdown_platforms": ["telegram", "aiocqhttp"],
-            }
-        }
-    )
-    assert config.sender_strategies.markdown_platforms == ["telegram", "aiocqhttp"]
-    assert config.to_astrbot_config()["sender_strategies"]["markdown_platforms"] == [
-        "telegram",
-        "aiocqhttp",
-    ]
-
-    # 显式空列表：任何渠道都不使用 Markdown
-    config = RsshubPluginConfig.from_astrbot_config(
-        {
-            "sender_strategies": {
-                "enabled_platforms": ["telegram"],
-                "markdown_platforms": [],
-            }
-        }
-    )
-    assert config.sender_strategies.markdown_platforms == []
+    serialized = config.to_astrbot_config()
+    assert "markdown_platforms" not in serialized["sender_strategies"]
 
 
 def test_sender_strategies_parse_empty_list_as_all_disabled():
@@ -566,7 +543,6 @@ def test_config_save_writes_single_sender_strategy_template_list_with_enabled_pl
     assert astrbot_config.saved is True
     assert astrbot_config["sender_strategies"] == {
         "enabled_platforms": ["telegram", "qq_official"],
-        "markdown_platforms": ["telegram"],
         "platform_strategies": [],
     }
 

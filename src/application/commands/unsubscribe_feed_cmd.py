@@ -4,6 +4,8 @@
 处理用户取消订阅 RSS 源的业务用例。
 """
 
+from typing import Any
+
 from ...domain.repositories.feed_repository import FeedRepository
 from ...domain.repositories.subscription_repository import SubscriptionRepository
 from ..dto.result_dto import CommandResult
@@ -20,9 +22,11 @@ class UnsubscribeFeedCommand:
         self,
         subscription_repo: SubscriptionRepository,
         feed_repo: FeedRepository,
+        list_queue_service: Any = None,
     ):
         self._subscription_repo = subscription_repo
         self._feed_repo = feed_repo
+        self._list_queue_service = list_queue_service
 
     async def execute(
         self,
@@ -69,6 +73,8 @@ class UnsubscribeFeedCommand:
         custom_title = f" ({subscription.title})" if subscription.title else ""
 
         await self._subscription_repo.delete(subscription)
+        if self._list_queue_service is not None:
+            await self._list_queue_service.cleanup_subscription(sub_id)
 
         lines = [
             "已取消的订阅列表（当前会话）:",
@@ -114,6 +120,8 @@ class UnsubscribeFeedCommand:
                 if not (is_owner or is_current_session):
                     continue
             await self._subscription_repo.delete(sub)
+            if self._list_queue_service is not None and sub.id is not None:
+                await self._list_queue_service.cleanup_subscription(sub.id)
             deleted += 1
 
         if deleted == 0:

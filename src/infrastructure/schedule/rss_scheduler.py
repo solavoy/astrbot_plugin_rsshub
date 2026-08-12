@@ -150,6 +150,7 @@ class RSSScheduler:
         feed_polling_service: FeedPollingService | None = None,
         notification_dispatcher: NotificationDispatcher | None = None,
         notification_service: NotificationService | None = None,
+        list_batch_coordinator: Any | None = None,
         default_interval: int = 10,
         history_retention_days: int = 30,
         **_: Any,
@@ -157,6 +158,7 @@ class RSSScheduler:
         self._feed_polling_service = feed_polling_service
         self._notification_dispatcher = notification_dispatcher
         self._legacy_notification_service = notification_service
+        self._list_batch_coordinator = list_batch_coordinator
         self._stats = SchedulerStats()
         self._running = False
         self._bg_task: asyncio.Task | None = None
@@ -164,8 +166,13 @@ class RSSScheduler:
         self._history_retention_days = max(1, history_retention_days)
 
     async def start(self) -> None:
-        """启动调度器"""
+        """启动调度器，并恢复上次中断的 List 批次。"""
         self._running = True
+        if self._list_batch_coordinator is not None:
+            try:
+                await self._list_batch_coordinator.recover()
+            except Exception as exc:
+                logger.warning("List 批次启动恢复失败: %s", exc)
         logger.info("RSS调度器已启动")
 
     async def stop(self) -> None:
@@ -192,6 +199,12 @@ class RSSScheduler:
             await self._cleanup_old_records()
 
         await self._dispatch_pending_retries()
+
+        try:
+            if self._list_batch_coordinator is not None:
+                await self._list_batch_coordinator.tick()
+        except Exception as ex:
+            logger.error("List 批次协调任务失败: %s", ex, exc_info=True)
 
         try:
             due_by_feed = await self._load_due_subscriptions(now)

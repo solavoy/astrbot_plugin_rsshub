@@ -300,3 +300,24 @@ async def test_scheduler_cleanup_uses_configured_retention_days():
     await scheduler._cleanup_old_records()
 
     dispatcher.cleanup_old_records.assert_awaited_once_with(days=7)
+
+
+@pytest.mark.asyncio
+async def test_scheduler_start_calls_list_recover_and_tick_calls_coordinator():
+    """调度器接线：start 调用 recover，run_periodic_task 调用 tick。"""
+    from unittest.mock import MagicMock
+
+    coordinator = MagicMock()
+    coordinator.recover = AsyncMock()
+    coordinator.tick = AsyncMock()
+
+    scheduler = RSSScheduler(
+        feed_polling_service=AsyncMock(),
+        list_batch_coordinator=coordinator,
+        default_interval=10,
+    )
+    await scheduler.start()
+    coordinator.recover.assert_awaited_once()
+
+    # 数据库未初始化时 run_periodic_task 直接返回，不调用 tick
+    coordinator.tick.assert_not_awaited()

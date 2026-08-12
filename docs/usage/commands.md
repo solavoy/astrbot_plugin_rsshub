@@ -44,7 +44,6 @@
 | `display_via` | `-2~-1/0/1` | 是否显示来源。 |
 | `display_title` | `-1~1` | 是否显示标题。 |
 | `display_entry_tags` | `-1~1` | 是否显示标签。 |
-| `style` | `0/1/2` | 推送排版策略：自动、RSSRT、原始顺序。 |
 | `display_media` | `-1/0` | 是否显示媒体。 |
 | `interval` | 正整数 | 监控间隔，单位分钟。 |
 | `title` | 字符串 | 订阅标题。 |

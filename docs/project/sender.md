@@ -62,18 +62,17 @@ provider 会同时解析 sender strategy：
 - 统一 sender 返回值
 - 统一错误与重绑语义
 
-### 推送排版策略
+### 统一发送模型
 
-`style` 的枚举语义见 [`domain-model.md`](./domain-model.md#推送排版策略)。sender 层只负责按该策略选择平台发送结构。
+所有内容统一为规范 Markdown 正文 + 有序媒体集合；发送顺序固定为正文 → 图片 → 视频 → 音频 → 文件。`style` 排版策略与 `original` 布局发送已移除。
 
 ### QQ Official / Weixin OC 顺序发送
 
 `qq_official` 和 `weixin_oc` 不再统一走默认整条 chain 策略。它们在 sender adapter 内部按平台能力处理：
 
-- QQ Official 单图 + 文本合成一条 `Image + Plain`。
-- QQ Official classic 中的视频/多媒体仍按媒体优先、文本最后拆发。
-- QQ Official original 按 layout fragments 尝试图片 + 后续文本合链，视频仍独立。
-- Weixin OC 始终逐条发送，original 只影响顺序，不合并图文。
+- QQ Official 单图 + 文本合成一条 `Plain + Image`。
+- QQ Official 视频/多媒体仍按媒体优先、文本最后拆发。
+- Weixin OC 始终逐条发送，不合并图文。
 
 这样做是为了避开平台对多媒体图文链的吞文本问题，同时保留 QQ Official 单图图文链的可读性。
 
@@ -81,9 +80,9 @@ provider 会同时解析 sender strategy：
 
 ### Markdown 文本发送
 
-RSS 文本格式化层支持平台感知的轻量 Markdown 输出，渠道由 `sender_strategies.markdown_platforms` 勾选配置（默认仅 `telegram`，选项覆盖 `telegram`/`aiocqhttp`/`qq_official`/`weixin_oc`）。勾选的渠道输出 Markdown 排版：标题加粗、可点击 via 链接、`---` 归属分隔线，转义按 MarkdownV2 全集合处理（`docs/project/sender.md` 契约：AstrBot Telegram adapter 对 Plain 文本走 MarkdownV2 转换）。未勾选的渠道保持纯文本，避免 `**标题**`、`[链接](链接)` 等 Markdown 原文直接暴露给用户。
+RSS 文本格式化层统一输出规范 Markdown：标题加粗、可点击 via 链接、`---` 归属分隔线，转义按 MarkdownV2 全集合处理（`docs/project/sender.md` 契约：AstrBot Telegram adapter 对 Plain 文本走 MarkdownV2 转换）。
 
-当前只有 Telegram 会真正渲染 Markdown（`MessageChain.use_markdown(True)`，按 context 的 `render_markdown` 标记）；其余渠道勾选后内容为 Markdown 语法，是否渲染取决于平台客户端能力。配置为空列表表示任何渠道都不使用 Markdown。
+只有 Telegram 会真正渲染 Markdown（`MessageChain.use_markdown(True)`，按 context 的 `render_markdown` 标记）；其余平台（OneBot / QQ 官方 / 微信 / 默认 sender）在发送边界用 `markdown_to_plain` 把 Markdown 降级为可读纯文本，避免 `**标题**`、`[链接](链接)` 等原始语法直接暴露给用户。`sender_strategies.markdown_platforms` 配置已移除。
 
 QQ Official 的运行时开关在 `sender_strategies.platform_strategies` 的 `qq_official_strategy.markdown_mode`：
 
@@ -91,15 +90,13 @@ QQ Official 的运行时开关在 `sender_strategies.platform_strategies` 的 `q
 - `force`：预留强制 Markdown 策略。
 - `plain`：纯文本策略。
 
-QQ Official sender 必须通过 AstrBot `MessageChain.use_markdown_` 控制 Markdown，不能绕过 core 手写 botpy payload。当前主动推送链路临时统一生成纯文本并显式关闭 QQ Official Markdown，避免 `**标题**`、`[链接](链接)` 等 Markdown 原文直接暴露给用户；待 AstrBot core 对主动推送的消息级 Markdown 行为稳定后，再恢复三态策略。
+QQ Official sender 必须通过 AstrBot `MessageChain.use_markdown_` 控制 Markdown，不能绕过 core 手写 botpy payload。当前主动推送链路按 `should_render_markdown` 决定是否渲染，非 Telegram 平台显式降级为纯文本。
 
-Telegram 的 Markdown 由 `markdown_platforms` 勾选控制（不再硬编码）。插件只优化 Plain 文本文案，AstrBot Telegram adapter 会对 Plain 文本走 MarkdownV2 转换；媒体 caption Markdown 不是当前插件承诺面。
+Telegram 的 Markdown 由 `should_render_markdown(platform)` 判定。插件只优化 Plain 文本文案，AstrBot Telegram adapter 会对 Plain 文本走 MarkdownV2 转换；媒体 caption Markdown 不是当前插件承诺面。
 
-### OneBot 经典与原始顺序
+### OneBot 合并转发
 
-OneBot auto/classic 使用合并转发，节点名优先使用 feed title。合并转发失败后会回退为纯文本 Nodes。OneBot original 不使用大合并转发包，而是按 layout fragments 逐条发送图文片段，适合 AI 日报这类多图长文。
-
-original layout 中的 PDF / 文档链接保持 `file` 片段语义，由 sender 按文件或尾部组件发送，不参与图片合链，也不会被当作 image 组件处理。
+OneBot 使用合并转发，节点名优先使用 feed title。合并转发失败后会回退为纯文本 Nodes。节点顺序遵循统一模型：文本节点在前，媒体节点依次在后。
 
 ### Telegram 大图片
 

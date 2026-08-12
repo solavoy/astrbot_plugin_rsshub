@@ -45,6 +45,9 @@ def _handler(
     notification_dispatcher=None,
     sub_repo=None,
     user_repo=None,
+    list_repo=None,
+    list_queue_service=None,
+    list_batch_coordinator=None,
 ):
     return WebApiHandler(
         subscribe_cmd=subscribe_cmd or MagicMock(),
@@ -67,6 +70,9 @@ def _handler(
         notification_dispatcher=notification_dispatcher,
         config=config or MagicMock(),
         raw_config=raw_config,
+        list_queue_service=list_queue_service,
+        list_repo=list_repo,
+        list_batch_coordinator=list_batch_coordinator,
     )
 
 
@@ -2646,3 +2652,177 @@ async def test_dashboard_charts_merges_feed_share_tail():
     assert len(payload["feed_share"]["items"]) == 9
     assert payload["feed_share"]["items"][-1]["title"] == "其他"
     assert payload["feed_share"]["items"][-1]["count"] == 2
+
+
+@pytest.mark.asyncio
+async def test_lists_endpoint_returns_lists_with_aggregates():
+    from astrbot_plugin_rsshub.src.domain.entities.list_entities import ListEntity
+
+    lst = ListEntity(
+        id=3, name="Tech", user_id="u1", target_session="s1",
+        platform_name="telegram", batch_size=10, max_wait_minutes=120,
+    )
+    list_repo = MagicMock()
+    list_repo.get_all_lists = AsyncMock(return_value=[lst])
+    list_repo.count_queued = AsyncMock(return_value=4)
+    list_repo.oldest_queued_at = AsyncMock(return_value=None)
+    list_repo.list_batches = AsyncMock(return_value=[])
+    sub_repo = MagicMock()
+    sub_repo.get_by_list = AsyncMock(return_value=[])
+
+    handler = _handler(
+        polling_service=MagicMock(),
+        list_repo=list_repo,
+        sub_repo=sub_repo,
+    )
+    app = Quart(__name__)
+    async with app.test_request_context("/astrbot_plugin_rsshub/lists"):
+        response = await handler.handle_lists()
+    payload = await response.get_json()
+    assert payload["ok"] is True
+    assert payload["total"] == 1
+    item = payload["items"][0]
+    assert item["id"] == 3 and item["name"] == "Tech"
+    assert item["queued_count"] == 4
+
+
+@pytest.mark.asyncio
+async def test_create_list_requires_name_and_validates_modes():
+    from astrbot_plugin_rsshub.src.domain.entities.list_entities import ListEntity
+
+    list_repo = MagicMock()
+    list_repo.get_lists_by_scope = AsyncMock(return_value=[])
+    list_repo.save_list = AsyncMock(side_effect=lambda e: e)
+
+    handler = _handler(
+        polling_service=MagicMock(),
+        list_repo=list_repo,
+    )
+    app = Quart(__name__)
+    # 缺少 name
+    async with app.test_request_context(
+        "/astrbot_plugin_rsshub/lists/create",
+        method="POST",
+        json={"user_id": "u1", "target_session": "s1"},
+    ):
+        response = await handler.handle_create_list()
+    payload = await response.get_json()
+    assert payload["ok"] is False and "名称" in payload["error"]
+    # 合法创建
+    async with app.test_request_context(
+        "/astrbot_plugin_rsshub/lists/create",
+        method="POST",
+        json={
+            "name": "Tech",
+            "user_id": "u1",
+            "target_session": "s1",
+            "platform_name": "telegram",
+            "content_mode": "title_link",
+        },
+    ):
+        response = await handler.handle_create_list()
+    payload = await response.get_json()
+    assert payload["ok"] is True
+    saved = list_repo.save_list.call_args.args[0]
+    assert saved.name == "Tech" and saved.content_mode == "title_link"
+
+
+@pytest.mark.asyncio
+async def test_clear_queue_calls_clear_queue_on_service():
+    list_queue_service = MagicMock()
+    list_queue_service.clear_queue = AsyncMock(return_value=5)
+    handler = _handler(
+        polling_service=MagicMock(),
+        list_repo=MagicMock(),
+        list_queue_service=list_queue_service,
+    )
+    app = Quart(__name__)
+    async with app.test_request_context(
+        "/astrbot_plugin_rsshub/lists/clear-queue",
+        method="POST",
+        json={"list_id": 2},
+    ):
+        response = await handler.handle_clear_queue()
+    payload = await response.get_json()
+    assert payload["ok"] is True and payload["cleared"] == 5
+    list_queue_service.clear_queue.assert_awaited_once_with(2)
+
+
+@pytest.mark.asyncio
+async def test_move_subscriptions_rejects_cross_scope_ownership():
+    from astrbot_plugin_rsshub.src.domain.entities.list_entities import ListEntity
+    from astrbot_plugin_rsshub.src.domain.entities.subscription import Subscription
+
+    target = ListEntity(
+        id=9, name="News", user_id="u2", target_session="s2", platform_name="telegram"
+    )
+    list_repo = MagicMock()
+    list_repo.get_list = AsyncMock(return_value=target)
+    sub_repo = MagicMock()
+    sub_repo.get_by_id = AsyncMock(
+        return_value=Subscription(
+            id=1, user_id="u1", feed_id=1,
+            target_session="s1", platform_name="telegram",
+        )
+    )
+
+    handler = _handler(
+        polling_service=MagicMock(),
+        list_repo=list_repo,
+        sub_repo=sub_repo,
+    )
+    app = Quart(__name__)
+    async with app.test_request_context(
+        "/astrbot_plugin_rsshub/lists/move-subscriptions",
+        method="POST",
+        json={"target_list_id": 9, "sub_ids": [1]},
+    ):
+        response = await handler.handle_move_subscriptions()
+    payload = await response.get_json()
+    assert payload["ok"] is True and payload["moved"] == 0  # 归属不一致，不移动
+    sub_repo.update_options.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_eligible_subscriptions_groups_by_domain():
+    from astrbot_plugin_rsshub.src.domain.entities.feed import Feed
+    from astrbot_plugin_rsshub.src.domain.entities.list_entities import ListEntity
+    from astrbot_plugin_rsshub.src.domain.entities.subscription import Subscription
+
+    lst = ListEntity(
+        id=5, name="Tech", user_id="u1", target_session="s1", platform_name="telegram"
+    )
+    list_repo = MagicMock()
+    list_repo.get_list = AsyncMock(return_value=lst)
+    feed = Feed(
+        id=1, link="https://rsshub.app/v2ex/topics/latest", title="V2EX",
+    )
+    feed_repo = MagicMock()
+    feed_repo.get_by_id = AsyncMock(return_value=feed)
+    sub_repo = MagicMock()
+    sub_repo.list_for_dashboard = AsyncMock(
+        return_value=[
+            Subscription(
+                id=1, user_id="u1", feed_id=1,
+                target_session="s1", platform_name="telegram",
+            ),
+            Subscription(
+                id=2, user_id="u1", feed_id=1,
+                target_session="s1", platform_name="telegram", list_id=5,
+            ),
+        ]
+    )
+
+    handler = _handler(
+        polling_service=MagicMock(),
+        list_repo=list_repo,
+        sub_repo=sub_repo,
+    )
+    handler._feed_repo = feed_repo
+    app = Quart(__name__)
+    async with app.test_request_context("/astrbot_plugin_rsshub/lists/eligible-subscriptions?list_id=5"):
+        response = await handler.handle_eligible_subscriptions()
+    payload = await response.get_json()
+    assert payload["ok"] is True
+    assert "rsshub.app" in payload["groups"]
+    assert payload["total"] == 2

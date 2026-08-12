@@ -68,15 +68,9 @@
 
 注意：`MessageComponentSorter` 只负责排序，不负责决定“一条消息拆成几次发送”。平台是否需要拆批发送属于 sender adapter 的职责。
 
-## 推送排版策略
+## 统一发送模型
 
-`style` 字段现在表示推送排版策略：
-
-- `0=auto`：自动选择平台经典发送方式，例如 OneBot 使用合并转发。
-- `1=RSSRT`：保留给 RSSRT 排版策略。
-- `2=original`：优先使用 HTML/XML 解析树生成的 layout fragments，尽量按原始顺序发送图文片段；文本片段仍遵守最终生效的 `length_limit`，媒体、文件片段只参与顺序发送，不因文本裁剪被丢弃。
-
-旧 `flowerss` 语义已经废弃，迁移时会重置为 classic。
+所有内容先统一为规范 Markdown 正文 + 有序媒体集合。发送顺序固定为：正文 → 图片 → 视频 → 音频 → 文件。Telegram 原生渲染 MarkdownV2；其余平台由 sender 在发送边界把 Markdown 降级为可读纯文本。`style` 排版策略与 `original` 布局发送已移除。
 
 ## 表格图片语义
 
@@ -86,7 +80,7 @@ HTML `<table>` 解析时会先尝试走轻量转图链路：
 - Renderer 使用 `BeautifulSoup/lxml` 读取 `caption`、`thead`、`tbody`、`tr`、`th`、`td`，并基础处理 `rowspan` / `colspan`。
 - 图片用 `Pillow` 绘制为统一聊天卡片风格，不做网页 CSS 高保真截图。
 - 字体按 `RSSHUB_TABLE_FONT_PATH` 环境变量、`RSSHUB_TABLE_FONT_DIR` 环境变量、运行时下载目录（`data/fonts/`）、`assets/fonts/` 的顺序查找。插件启动时自动从 jsDelivr CDN 下载 Noto Sans SC 子集 OTF 到持久化数据目录，SHA256 + 大小双重校验，下载失败时表格回退为 `A | B | C` 纯文本（不使用 Pillow 默认字体）。用户也可通过环境变量指定自定义字体，或把 `.ttf`/`.otf`/`.ttc` 放入 `assets/fonts/` 或运行时字体目录。
-- 成功后正文树里放入 `GeneratedImageContent`，`layout` 中生成带 `local_path` 的 image fragment；original style 不再把 `[表格已转为图片]` 作为可见文本片段发送，表格纯文本只作为图片缺失或发送失败时的内部 fallback。
+- 成功后正文树里放入 `GeneratedImageContent`；`[表格已转为图片]` 不作为可见文本发送，表格纯文本只作为图片缺失或发送失败时的内部 fallback。
 - 文本格式化会按 `display_media` 决定是否走表格转图：正常显示媒体时移除短占位以避免重复刷屏；关闭媒体时保留 `A | B | C` 文本 fallback。
 
 表格图片按规范化表格模型计算 sha256。启用 `media.cache_enabled` 时保存为 `cache/table_images/table_<hash>.png`，旁置 `.meta` 记录 `expire_ts`；命中会刷新 TTL，旧版无 meta 的 PNG 会先视为可复用并补写 meta，过期后重渲染。每次启用缓存渲染都会顺带清理已过期的其他表格图和明显陈旧的无 meta 孤儿 PNG，但会跳过当前 digest，避免误删刚被访问的旧版 PNG。同一表格重复推送会复用同一张图，缓存写入使用唯一临时文件避免并发同 hash 互相覆盖。
@@ -112,7 +106,7 @@ HTML `<table>` 解析时会先尝试走轻量转图链路：
 
 正常成功态不追加，避免正文被原始媒体链接污染。
 
-`qq_official` / `weixin_oc` 是平台特例：QQ Official 单图可与文本合发，视频和多媒体场景仍由 sender 拆批；Weixin OC 不支持图文同发，只能逐条发送。OneBot auto/classic 合并转发失败后会回退为纯文本 Nodes，original 排版不使用大合并转发包。
+`qq_official` / `weixin_oc` 是平台特例：QQ Official 单图可与文本合发，视频和多媒体场景仍由 sender 拆批；Weixin OC 不支持图文同发，只能逐条发送。OneBot 合并转发失败后会回退为纯文本 Nodes。
 
 ## 标题去重边界
 

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from astrbot_plugin_rsshub.src.application.ports import SendResult
@@ -158,19 +158,15 @@ async def test_dispatch_formats_markdown_only_for_telegram():
     )
     assert tg_ctx.render_markdown is True
 
-    # OneBot：纯文本，无 Markdown 原文泄漏
+    # OneBot：内容统一为 Markdown，渲染标记为 False（由 sender 边界降级）
     ob_req, ob_ctx = requests["onebot:user-2"]
-    assert ob_req.message.startswith("title")
-    assert "via https://example.com/entry | feed" in ob_req.message
-    assert "**" not in ob_req.message
+    assert "**title**" in ob_req.message
     assert ob_ctx.render_markdown is False
 
 
 @pytest.mark.asyncio
-async def test_dispatch_uses_configured_markdown_platforms():
-    """勾选 aiocqhttp 后 OneBot 也输出 Markdown 并带渲染标记。"""
-    from astrbot_plugin_rsshub.src.infrastructure.pipeline import EntryTextFormatter
-
+async def test_dispatch_non_telegram_marks_render_markdown_false():
+    """非 Telegram 平台内容统一为 Markdown，渲染标记为 False（sender 层降级）。"""
     sender = FakeSender()
     sub = Subscription(
         id=1,
@@ -191,32 +187,28 @@ async def test_dispatch_uses_configured_markdown_platforms():
         sender_provider=FakeSenderProvider(sender),
     )
 
-    EntryTextFormatter.configure_markdown_platforms(["telegram", "aiocqhttp"])
-    try:
-        await dispatcher.dispatch_to_feed_subscribers(
-            feed_id=10,
-            content="fallback content",
-            entry_title="title",
-            entry_link="https://example.com/entry",
-            entry_guid="guid-1",
-            raw_entry=EntryContentContext(
-                title="title",
-                summary="content",
-                content="content",
-                link="https://example.com/entry",
-                author="author",
-                feed_title="feed",
-                feed_link="https://example.com/feed.xml",
-            ),
-        )
-    finally:
-        EntryTextFormatter.configure_markdown_platforms(["telegram"])
+    await dispatcher.dispatch_to_feed_subscribers(
+        feed_id=10,
+        content="fallback content",
+        entry_title="title",
+        entry_link="https://example.com/entry",
+        entry_guid="guid-1",
+        raw_entry=EntryContentContext(
+            title="title",
+            summary="content",
+            content="content",
+            link="https://example.com/entry",
+            author="author",
+            feed_title="feed",
+            feed_link="https://example.com/feed.xml",
+        ),
+    )
 
     assert len(sender.requests) == 1
     req, ctx = sender.requests[0]
     assert "**title**" in req.message
     assert "via [https://example\\.com/entry]" in req.message
-    assert ctx.render_markdown is True
+    assert ctx.render_markdown is False
 
 
 @pytest.mark.asyncio
@@ -918,13 +910,15 @@ async def test_dispatch_with_raw_entry_keeps_cleaned_content_when_not_processed(
 
     assert stats == {"success": 1, "failed": 0, "pending": 0, "skipped": 0}
     first_saved = history_repo.save.await_args_list[0].args[0]
-    assert first_saved.content == clean_content
     assert first_saved.raw_xml == "<item><description>raw</description></item>"
     assert "<br" not in first_saved.content
     assert "<img" not in first_saved.content
     assert "<video" not in first_saved.content
+    # 内容统一为规范 Markdown：标题加粗，HTML 标签不泄漏
+    assert "**\\[ \\-50 Squad \\] \\#エンドフィールド" in first_saved.content
+    assert "Twitter following timeline" in first_saved.content
     request, _context = sender.requests[0]
-    assert request.message == clean_content
+    assert request.message == first_saved.content
 
 
 @pytest.mark.asyncio
@@ -975,15 +969,15 @@ async def test_dispatch_formats_raw_entry_with_effective_options_from_subscripti
 
     assert stats == {"success": 1, "failed": 0, "pending": 0, "skipped": 0}
     first_saved = history_repo.save.await_args_list[0].args[0]
-    assert first_saved.content == "a..."
+    assert first_saved.content == r"a\.\.\."
     assert first_saved.media_urls is None
     request, _context = sender.requests[0]
-    assert request.message == "a..."
+    assert request.message == r"a\.\.\."
     assert request.media is None
 
 
 @pytest.mark.asyncio
-async def test_dispatch_limits_original_layout_text_with_effective_length_limit():
+async def test_dispatch_ignores_layout_and_formats_markdown_with_length_limit():
     sender = FakeSender()
     sub = Subscription(
         id=1,
@@ -1044,13 +1038,9 @@ async def test_dispatch_limits_original_layout_text_with_effective_length_limit(
 
     assert stats == {"success": 1, "failed": 0, "pending": 0, "skipped": 0}
     request, context = sender.requests[0]
-    assert context.style == 2
-    assert request.layout is not None
-    assert [(item.kind, item.text, item.url) for item in request.layout] == [
-        ("text", "abcde...", ""),
-        ("image", "", "https://example.com/a.jpg"),
-        ("file", "", "https://example.com/report.pdf"),
-    ]
+    # original 排版已移除：layout 不再传递给 sender
+    assert request.layout is None
+    assert "**Title**" in request.message
     assert request.media == [
         ("image", "https://example.com/a.jpg"),
         ("file", "https://example.com/report.pdf"),
@@ -1100,8 +1090,8 @@ async def test_dispatch_keeps_original_layout_text_when_length_limit_disabled():
     )
 
     request, _context = sender.requests[0]
-    assert request.layout is not None
-    assert request.layout[0].text == "abcdefghij"
+    # original 排版已移除：layout 不再传递给 sender
+    assert request.layout is None
 
 
 @pytest.mark.asyncio
@@ -2020,3 +2010,211 @@ async def test_dispatch_telegraph_failure_falls_back_to_native_send(monkeypatch)
     )
 
     assert stats["success"] == 1
+
+
+@pytest.mark.asyncio
+async def test_dispatch_routes_list_subscription_to_durable_enqueue():
+    """订阅属于启用 List 时走持久化入队，不即时发送。"""
+    from astrbot_plugin_rsshub.src.domain.entities.list_entities import ListEntity
+
+    sender = FakeSender()
+    sub = Subscription(
+        id=1,
+        user_id="user-1",
+        feed_id=10,
+        platform_name="telegram",
+        target_session="telegram:Group:1",
+        list_id=5,
+    )
+    sub_repo = AsyncMock()
+    sub_repo.get_active_by_feed_id.return_value = [sub]
+    history_repo = AsyncMock()
+    history_repo.exists_success_by_scope_and_guid.return_value = False
+    history_repo.save.side_effect = lambda history: history
+    user_repo = AsyncMock()
+    user_repo.get_or_create.return_value = User(id="user-1")
+
+    list_queue = AsyncMock()
+    list_queue.load_list.return_value = ListEntity(
+        id=5, name="Tech", user_id="user-1",
+        target_session="telegram:Group:1", platform_name="telegram",
+    )
+    list_queue.filter_for_list = MagicMock(
+        return_value=SimpleNamespace(allowed=True, reason="")
+    )
+    list_queue.enqueue_durable.return_value = SimpleNamespace(
+        durably_queued=True, history_id=99, error=""
+    )
+
+    dispatcher = NotificationDispatcher(
+        subscription_repo=sub_repo,
+        push_history_repo=history_repo,
+        sender_provider=FakeSenderProvider(sender),
+        user_repo=user_repo,
+        list_queue_service=list_queue,
+    )
+
+    stats = await dispatcher.dispatch_to_feed_subscribers(
+        feed_id=10,
+        content="content",
+        entry_title="title",
+        entry_link="https://example.com/entry",
+        entry_guid="guid-1",
+    )
+
+    assert stats["durably_queued"] == 1
+    assert stats["success"] == 0
+    assert len(sender.requests) == 0  # 未即时发送
+    list_queue.enqueue_durable.assert_awaited_once()
+    call_kwargs = list_queue.enqueue_durable.call_args.kwargs
+    assert call_kwargs["list_id"] == 5
+    assert call_kwargs["entry_key"] == "guid-1"
+
+
+@pytest.mark.asyncio
+async def test_dispatch_list_subscription_filtered_writes_skipped():
+    """List 命中过滤规则时写 skipped 历史并跳过发送。"""
+    from astrbot_plugin_rsshub.src.domain.entities.list_entities import ListEntity
+
+    sender = FakeSender()
+    sub = Subscription(
+        id=1,
+        user_id="user-1",
+        feed_id=10,
+        platform_name="telegram",
+        target_session="telegram:Group:1",
+        list_id=5,
+    )
+    sub_repo = AsyncMock()
+    sub_repo.get_active_by_feed_id.return_value = [sub]
+    history_repo = AsyncMock()
+    history_repo.exists_success_by_scope_and_guid.return_value = False
+    history_repo.save.side_effect = lambda history: history
+    user_repo = AsyncMock()
+    user_repo.get_or_create.return_value = User(id="user-1")
+
+    list_queue = AsyncMock()
+    list_queue.load_list.return_value = ListEntity(
+        id=5, name="Tech", user_id="user-1",
+        target_session="telegram:Group:1", platform_name="telegram",
+    )
+    list_queue.filter_for_list = MagicMock(
+        return_value=SimpleNamespace(
+            allowed=False, reason="filtered: subscription exclude keyword"
+        )
+    )
+
+    dispatcher = NotificationDispatcher(
+        subscription_repo=sub_repo,
+        push_history_repo=history_repo,
+        sender_provider=FakeSenderProvider(sender),
+        user_repo=user_repo,
+        list_queue_service=list_queue,
+    )
+
+    stats = await dispatcher.dispatch_to_feed_subscribers(
+        feed_id=10,
+        content="content",
+        entry_title="title",
+        entry_link="https://example.com/entry",
+        entry_guid="guid-1",
+    )
+
+    assert stats["skipped"] == 1
+    assert len(sender.requests) == 0
+    list_queue.enqueue_durable.assert_not_awaited()
+    # skipped 历史写入
+    skipped_saves = [
+        call.args[0] for call in history_repo.save.await_args_list
+    ]
+    assert any(h.status == "skipped" for h in skipped_saves)
+
+
+@pytest.mark.asyncio
+async def test_dispatch_list_subscription_without_list_queue_service_sends():
+    """未装配 ListQueueService 时，list_id 订阅照常即时发送（向后兼容）。"""
+    sender = FakeSender()
+    sub = Subscription(
+        id=1,
+        user_id="user-1",
+        feed_id=10,
+        platform_name="telegram",
+        target_session="telegram:Group:1",
+        list_id=5,
+    )
+    sub_repo = AsyncMock()
+    sub_repo.get_active_by_feed_id.return_value = [sub]
+    history_repo = AsyncMock()
+    history_repo.exists_success_by_scope_and_guid.return_value = False
+    history_repo.save.side_effect = lambda history: history
+    user_repo = AsyncMock()
+    user_repo.get_or_create.return_value = User(id="user-1")
+
+    dispatcher = NotificationDispatcher(
+        subscription_repo=sub_repo,
+        push_history_repo=history_repo,
+        sender_provider=FakeSenderProvider(sender),
+        user_repo=user_repo,
+    )
+
+    stats = await dispatcher.dispatch_to_feed_subscribers(
+        feed_id=10,
+        content="content",
+        entry_title="title",
+        entry_link="https://example.com/entry",
+        entry_guid="guid-1",
+    )
+
+    assert stats["success"] == 1
+    assert len(sender.requests) == 1
+
+
+@pytest.mark.asyncio
+async def test_dispatch_list_subscription_disabled_list_skips_new_entries():
+    """List 停用：不新入队，新条目按规则性 skipped 推进水位。"""
+    from astrbot_plugin_rsshub.src.domain.entities.list_entities import ListEntity
+
+    sender = FakeSender()
+    sub = Subscription(
+        id=1,
+        user_id="user-1",
+        feed_id=10,
+        platform_name="telegram",
+        target_session="telegram:Group:1",
+        list_id=5,
+    )
+    sub_repo = AsyncMock()
+    sub_repo.get_active_by_feed_id.return_value = [sub]
+    history_repo = AsyncMock()
+    history_repo.exists_success_by_scope_and_guid.return_value = False
+    history_repo.save.side_effect = lambda history: history
+    user_repo = AsyncMock()
+    user_repo.get_or_create.return_value = User(id="user-1")
+
+    list_queue = AsyncMock()
+    list_queue.load_list.return_value = ListEntity(
+        id=5, name="Tech", user_id="user-1",
+        target_session="telegram:Group:1", platform_name="telegram",
+        state=0,  # 停用
+    )
+
+    dispatcher = NotificationDispatcher(
+        subscription_repo=sub_repo,
+        push_history_repo=history_repo,
+        sender_provider=FakeSenderProvider(sender),
+        user_repo=user_repo,
+        list_queue_service=list_queue,
+    )
+
+    stats = await dispatcher.dispatch_to_feed_subscribers(
+        feed_id=10,
+        content="content",
+        entry_title="title",
+        entry_link="https://example.com/entry",
+        entry_guid="guid-1",
+    )
+
+    assert stats["skipped"] == 1
+    assert stats["success"] == 0
+    assert len(sender.requests) == 0
+    list_queue.enqueue_durable.assert_not_awaited()

@@ -10,7 +10,6 @@ from ....shared.constants import (
     QQ_OFFICIAL_DEGRADE_STRATEGY_DEFAULT,
     QQ_OFFICIAL_MARKDOWN_MODE_DEFAULT,
     QQ_OFFICIAL_MEDIA_THRESHOLD_DEFAULT,
-    SENDER_MARKDOWN_PLATFORM_DEFAULT,
     TELEGRAM_PHOTO_MAX_BYTES,
 )
 
@@ -94,8 +93,14 @@ class SubscriptionDefaults:
     display_via: str = "自动"
     display_title: str = "自动"
     display_entry_tags: bool = False
-    style: str = "auto"
     display_media: bool = True
+
+
+@dataclass(frozen=True)
+class AiSummarySettings:
+    """List AI 总结配置。"""
+
+    ai_provider_id: str = ""
 
 
 @dataclass(frozen=True)
@@ -105,7 +110,6 @@ class SenderStrategySettings:
     telegram: bool = True
     aiocqhttp: bool = True
     qq_official: bool = True
-    markdown_platforms: tuple[str, ...] = SENDER_MARKDOWN_PLATFORM_DEFAULT
     telegram_settings: PlatformStrategySettings = field(
         default_factory=PlatformStrategySettings
     )
@@ -169,6 +173,7 @@ class ApplicationSettings:
     sender_strategies: SenderStrategySettings = field(
         default_factory=SenderStrategySettings
     )
+    ai_summary: AiSummarySettings = field(default_factory=AiSummarySettings)
     http: HttpSettings = field(default_factory=HttpSettings)
     media_platform_limits: MediaPlatformLimits = field(
         default_factory=MediaPlatformLimits

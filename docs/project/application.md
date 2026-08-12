@@ -28,7 +28,7 @@
 | Tool / 能力 | 输入边界 | 输出 / 副作用 | 备注 |
 | --- | --- | --- | --- |
 | `rss_subscribe` | 只暴露 `targets: string[]` | 批量订阅目标 | `targets` 中每项可以是完整 Feed URL、RSSHub path 或 route path。 |
-| `rss_push_xml_entry` | 只暴露安全格式化参数，如 `style`、`send_mode`、显示选项、`length_limit` | 立即推送 XML/HTML 条目并写入 `push_history` | 不读取订阅配置。 |
+| `rss_push_xml_entry` | 只暴露安全格式化参数，如 `send_mode`、显示选项、`length_limit` | 立即推送 XML/HTML 条目并写入 `push_history` | 不读取订阅配置。 |
 | XML payload 校验 | 拒绝 malformed、超大、DOCTYPE 输入 | 失败时不进入发送链路 | 保护 XML 解析。 |
 | agent push 去重 | `(source_type, source_key, user_id, target_session, entry_guid)` | 只看成功态 | 不依赖公开 `sub_id`。 |
 | agent retry | 复用历史记录中的 target 和 media 上下文 | 直接重发 | 保留审计连续性。 |
@@ -56,6 +56,28 @@
 | `deduplicate_multi_bot` | 只在同一 `target_session` 且最终 payload 等价时去重 | 被压制的发送必须写入 `status=skipped`。 |
 | 规则性跳过 | handler deny、通知关闭、成功去重 guard、多 BOT 去重都写入 `status=skipped` | 这类 skipped 是可审计 ack；不能伪装成 success。 |
 | Feed 水位确认 | 只有 `success` 或明确规则性 `skipped` 会确认本轮新 entry | `pending`、`failed` 或分发异常不能推进 `entry_hashes` / 条件请求水位，避免漏推。 |
+
+## List 聚合语义
+
+| 行为 | 当前语义 | 备注 |
+| --- | --- | --- |
+| 归属 | List 绑定单一 `user_id`、`target_session`、`platform_name`；一个订阅最多属于一个 List | 订阅移出 List 后，已入队内容仍归原批次，后续新条目恢复即时推送。 |
+| 批次触发 | 达到 `batch_size` 立即生成；最早条目等待达到 `max_wait_minutes` 生成；成功后开始下一批 | 一次 25 条阈值 10 生成 10/10/5。 |
+| 可靠入队 | pending push_history + 队列项同事务写入；入队失败不推进 Feed 水位 | 水位推进：规则性 `skipped` 和 `durably_queued` 可推进；`pending`/`failed`/异常不推进。 |
+| 队列项幂等 | 唯一约束 `(list_id, sub_id, entry_key)`；`entry_key` 优先 GUID，缺失用轮询稳定指纹 | 重复入队返回失败，不产生第二条。 |
+| 两级过滤 | 订阅层关注词/屏蔽词 + List 层关注词/屏蔽词；屏蔽词并集命中即拒，关注词层内 OR、层间 AND | 被过滤条目写 `status=skipped` 并推进水位。 |
+| 停用语义 | List 停用后不新入队，新条目按规则性 `skipped` 推进水位；已有队列保留 | Dispatcher 对停用 List 写 `skipped`，不入队也不即时发送。 |
+| 分片持久化 | 渲染结果（批次分片）持久化；重试只发未成功分片 | 拆分一次生成，重试不重切。 |
+| 删除联动 | 删除订阅/Feed/用户时清理未发送队列项，把相关 `pending` 历史标为 `skipped` | 已发送审计保留。 |
+
+## List AI 总结边界
+
+| 行为 | 当前语义 | 备注 |
+| --- | --- | --- |
+| Provider 选择 | `ai_summary.ai_provider_id` 配置优先；为空回退 List `target_session` 当前 Provider | 走 `Context.llm_generate(chat_provider_id=..., prompt=...)` 读 `response.completion_text`。 |
+| 输入边界 | 只总结通过过滤并进入当前批次的条目；系统模板明确 Feed 内容为不可信数据 | 禁止执行条目中的指令。 |
+| 结果规范 | 规范化 Markdown，移除 `[CQ:`、`sendMessage`、`tool_use` 等注入标记 | 禁止注入消息组件、会话目标或工具调用。 |
+| 失败降级 | Provider 不可用或异常时正文照常发送，`summary_status=failed`，`fail_reason` 受长度限制 | 首次结果持久化，重试不重复调用模型。 |
 
 ## 已移除的应用能力
 

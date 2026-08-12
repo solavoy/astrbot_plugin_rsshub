@@ -16,6 +16,7 @@ def test_conf_schema_is_scoped_to_startup_credentials_and_sender_strategies():
         "http_config",
         "media",
         "sender_strategies",
+        "ai_summary",
     }
     assert "route_knowledge" not in schema
     assert "content_handlers" not in schema
@@ -136,17 +137,8 @@ def test_conf_schema_is_scoped_to_startup_credentials_and_sender_strategies():
     assert enabled_platforms["default"] == sender_strategy_options
     assert enabled_platforms["options"] == sender_strategy_options
     assert enabled_platforms["items"]["type"] == "string"
-    # Markdown 渠道勾选：默认仅 Telegram，选项覆盖全部支持平台
-    markdown_platforms = sender_strategies["items"]["markdown_platforms"]
-    assert markdown_platforms["type"] == "list"
-    assert markdown_platforms["default"] == ["telegram"]
-    assert markdown_platforms["options"] == [
-        "telegram",
-        "aiocqhttp",
-        "qq_official",
-        "weixin_oc",
-    ]
-    assert markdown_platforms["items"]["type"] == "string"
+    # markdown_platforms 渠道勾选已移除：内容统一为 Markdown，sender 按平台适配
+    assert "markdown_platforms" not in sender_strategies["items"]
 
 
 def test_conf_schema_exposes_single_platform_strategy_template_list():
@@ -189,3 +181,13 @@ def test_conf_schema_exposes_single_platform_strategy_template_list():
     ]
     assert "enable_telegraph" not in qq_official_items
     assert "napcat_stream_mode" not in qq_official_items
+
+
+def test_conf_schema_ai_summary_has_select_provider():
+    schema = json.loads((PLUGIN_ROOT / "_conf_schema.json").read_text(encoding="utf-8"))
+    ai_summary = schema["ai_summary"]
+    assert ai_summary["type"] == "object"
+    ai_provider = ai_summary["items"]["ai_provider_id"]
+    assert ai_provider["type"] == "string"
+    assert ai_provider["_special"] == "select_provider"
+    assert ai_provider["default"] == ""
