@@ -192,7 +192,7 @@ async def test_list_push_end_to_end(temp_db_path, sample_rss_feed):
     assert await list_repo.count_queued(lst.id) == 1
 
     # 3. 批次触发 → 渲染标题链接 → 发送
-    await coordinator.tick()
+    await coordinator.tick(wait_send=True)
     batches = await list_repo.list_batches(lst.id)
     assert len(batches) == 1
     assert batches[0].state == "success"

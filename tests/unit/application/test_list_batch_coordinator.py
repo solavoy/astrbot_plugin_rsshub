@@ -106,7 +106,7 @@ async def test_tick_creates_full_batches_for_25_items(temp_db_path):
         renderer=ListBatchRenderer(),
         session_push_queue=queue,
     )
-    await coordinator.tick()
+    await coordinator.tick(wait_send=True)
     batches = await repo.list_batches(lst.id, limit=50)
     assert len(batches) == 2  # 10 + 10 完整批次，剩余 5 未入批
     assert batches[0].item_count == 10 and batches[1].item_count == 10
@@ -137,7 +137,7 @@ async def test_tick_creates_timeout_batch_for_partial_items(temp_db_path):
         renderer=ListBatchRenderer(),
         session_push_queue=SessionPushQueue(),
     )
-    await coordinator.tick()
+    await coordinator.tick(wait_send=True)
     batches = await repo.list_batches(lst.id, limit=50)
     assert len(batches) == 1
     assert batches[0].item_count == 1
@@ -189,7 +189,7 @@ async def test_concurrent_tick_only_claims_once(temp_db_path):
         renderer=ListBatchRenderer(),
         session_push_queue=SessionPushQueue(),
     )
-    await asyncio.gather(coordinator.tick(), coordinator.tick(), coordinator.tick())
+    await asyncio.gather(coordinator.tick(wait_send=True), coordinator.tick(wait_send=True), coordinator.tick(wait_send=True))
     batches = await repo.list_batches(lst.id, limit=50)
     assert len(batches) == 1
     await get_database().close()
@@ -244,7 +244,7 @@ async def test_retry_batch_resends_only_failed_parts(temp_db_path):
         session_push_queue=SessionPushQueue(),
         dispatcher=fake,
     )
-    await coordinator.retry_batch(batch.id)
+    await coordinator.retry_batch(batch.id, wait_send=True)
     # 重试只重发失败分片
     assert fake.sent == ["bad"]
     parts_after = await repo.get_parts(batch.id)
@@ -295,7 +295,7 @@ async def test_summary_failure_keeps_batch_success(temp_db_path):
         summary_provider=_FailProvider(),
         dispatcher=_FakeDispatcher(),
     )
-    await coordinator.tick()
+    await coordinator.tick(wait_send=True)
     batches = await repo.list_batches(lst.id)
     assert batches[0].state == "success"
     assert batches[0].summary_status == "failed"
@@ -340,7 +340,7 @@ async def test_summary_success_inserts_summary_part(temp_db_path):
         summary_provider=_OkProvider(),
         dispatcher=fake,
     )
-    await coordinator.tick()
+    await coordinator.tick(wait_send=True)
     batches = await repo.list_batches(lst.id)
     assert batches[0].state == "success"
     assert batches[0].summary_status == "success"
@@ -385,8 +385,8 @@ async def test_concurrent_flush_only_creates_one_batch(temp_db_path):
         session_push_queue=SessionPushQueue(),
     )
     results = await asyncio.gather(
-        coordinator.flush_list(lst.id),
-        coordinator.flush_list(lst.id),
+        coordinator.flush_list(lst.id, wait_send=True),
+        coordinator.flush_list(lst.id, wait_send=True),
     )
     # 只有一个调用 claim 到条目，另一个在锁内读到 0 返回
     assert sorted(results) == [0, 1]

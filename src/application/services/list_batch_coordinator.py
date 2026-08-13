@@ -43,15 +43,46 @@ class ListBatchCoordinator:
         self._summary_provider = summary_provider
         self._dispatcher = dispatcher
         self._push_history_repo = push_history_repo
+        # 批次发送与 AI 总结的 fire-and-forget 后台任务，防 GC 并可供等待。
+        self._background_tasks: set[asyncio.Task] = set()
         self._locks: dict[int, asyncio.Lock] = {}
+
+    async def shutdown(self) -> None:
+        """插件关闭时取消后台任务，避免残留协程。"""
+        tasks = list(self._background_tasks)
+        for task in tasks:
+            task.cancel()
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
 
     def _lock_for(self, list_id: int) -> asyncio.Lock:
         if list_id not in self._locks:
             self._locks[list_id] = asyncio.Lock()
         return self._locks[list_id]
 
-    async def tick(self) -> None:
-        """对每个活跃 List 触发达标/超时批次。"""
+    def _spawn(self, coro: Any) -> asyncio.Task:
+        """创建 fire-and-forget 后台任务并跟踪，防止被 GC 中断。"""
+        task = asyncio.create_task(coro)
+        self._background_tasks.add(task)
+        task.add_done_callback(self._background_tasks.discard)
+        return task
+
+    async def _wait_background(self) -> None:
+        """等待全部后台任务完成（供测试确定性断言与关闭清理）。
+
+        任务执行中可能再 spawn 子任务（批次发送内部触发 AI 总结），因此循环等待
+        直到集合清空。
+        """
+        while self._background_tasks:
+            pending = list(self._background_tasks)
+            await asyncio.gather(*pending, return_exceptions=True)
+
+    async def tick(self, *, wait_send: bool = False) -> None:
+        """对每个活跃 List 触发达标/超时批次。
+
+        wait_send=True 时等待批次发送完成（测试用）；默认 fire-and-forget，
+        不阻塞调度器的当轮 Feed 轮询。
+        """
         lists = await self._list_repo.get_active_lists()
         now = datetime.now(timezone.utc)
         for list_entity in lists:
@@ -77,6 +108,8 @@ class ListBatchCoordinator:
                             await self._create_batch(list_entity, claim_limit=count)
                             continue
                     break
+        if wait_send:
+            await self._wait_background()
 
     async def recover(self) -> None:
         """启动恢复：中断批次标为 failed，claimed 队列项回退 queued。"""
@@ -117,7 +150,7 @@ class ListBatchCoordinator:
         batch.item_count = claimed
         batch.state = "ready"
         await self._batch_repo.update_batch(batch)
-        await self._enqueue_send(list_entity, batch.id)
+        self._enqueue_send(list_entity, batch.id)
 
     @staticmethod
     def _build_part_item_pairs(
@@ -134,13 +167,16 @@ class ListBatchCoordinator:
                     pairs.append((part.id, item.id))
         return pairs
 
-    async def _enqueue_send(self, list_entity: ListEntity, batch_id: int) -> None:
+    def _enqueue_send(self, list_entity: ListEntity, batch_id: int) -> None:
+        """后台排队发送批次，不阻塞调用方（tick / flush / retry）。"""
         if self._session_push_queue is None:
             return
-        await self._session_push_queue.enqueue(
-            list_entity.target_session,
-            work=lambda job: self._send_batch(list_entity, batch_id),
-            description=f"list={list_entity.id}, batch={batch_id}",
+        self._spawn(
+            self._session_push_queue.enqueue(
+                list_entity.target_session,
+                work=lambda job: self._send_batch(list_entity, batch_id),
+                description=f"list={list_entity.id}, batch={batch_id}",
+            )
         )
 
     async def _send_batch(self, list_entity: ListEntity, batch_id: int) -> None:
@@ -218,7 +254,10 @@ class ListBatchCoordinator:
             batch.fail_reason = ""
             batch.completed_at = datetime.now(timezone.utc)
             await self._batch_repo.update_batch(batch)
-            await self._maybe_generate_summary(list_entity, batch)
+            # AI 总结移出队列锁：批次 job 立即结束，后台任务生成+发送总结，
+            # 不阻塞同会话的其它推送。
+            if list_entity.ai_summary_enabled and self._summary_provider is not None:
+                self._spawn(self._maybe_generate_summary(list_entity, batch))
         else:
             await self._queue_repo.mark_batch_items_failed(
                 batch_id, "some parts failed"
@@ -341,7 +380,7 @@ class ListBatchCoordinator:
             await self._batch_repo.update_part(part)
             return False
 
-    async def flush_list(self, list_id: int) -> int:
+    async def flush_list(self, list_id: int, *, wait_send: bool = False) -> int:
         """立即把当前排队项 claim 为一个批次并发送（Plugin Pages 手动触发）。"""
         list_entity = await self._list_repo.get_list(list_id)
         if list_entity is None:
@@ -353,9 +392,11 @@ class ListBatchCoordinator:
             if count <= 0:
                 return 0
             await self._create_batch(list_entity, claim_limit=count)
+            if wait_send:
+                await self._wait_background()
             return count
 
-    async def retry_batch(self, batch_id: int) -> None:
+    async def retry_batch(self, batch_id: int, *, wait_send: bool = False) -> None:
         """重发 failed 批次中未成功的分片。"""
         batch = await self._batch_repo.get_batch(batch_id)
         if batch is None or batch.state != "failed":
@@ -369,4 +410,6 @@ class ListBatchCoordinator:
         # 已失败分片重新排队发送；成功分片保持 success 不重发。
         batch.state = "sending"
         await self._batch_repo.update_batch(batch)
-        await self._enqueue_send(list_entity, batch_id)
+        self._enqueue_send(list_entity, batch_id)
+        if wait_send:
+            await self._wait_background()

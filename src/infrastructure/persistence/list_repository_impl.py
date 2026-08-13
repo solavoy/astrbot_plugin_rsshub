@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from sqlalchemy import update
-from sqlmodel import asc, desc, select
+from sqlmodel import asc, desc, func, select
 
 from ...domain.entities.list_entities import (
     ListBatch,
@@ -165,15 +165,15 @@ class ListRepositoryImpl:
         db = get_database()
         async with db.get_session() as session:
             stmt = (
-                select(ListQueueItemORM.id)
+                select(func.count())
+                .select_from(ListQueueItemORM)
                 .where(
                     ListQueueItemORM.list_id == list_id,
                     ListQueueItemORM.state == "queued",
                 )
-                .execution_options(synchronize_session=False)
             )
             result = await session.execute(stmt)
-            return len(result.all())
+            return int(result.scalar_one() or 0)
 
     async def get_queued_items(
         self, list_id: int, limit: int | None = None

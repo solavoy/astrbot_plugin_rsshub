@@ -152,6 +152,9 @@ class PluginRuntime:
     async def stop(self) -> None:
         """Stop runtime-owned background work and shared resources."""
         await self.scheduler.stop()
+        coordinator = self.deps.get("list_batch_coordinator")
+        if coordinator is not None:
+            await coordinator.shutdown()
         await self.push_job_queue.stop_all()
         db = get_database()
         if db:

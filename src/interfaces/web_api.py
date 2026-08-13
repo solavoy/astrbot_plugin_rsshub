@@ -2276,7 +2276,11 @@ class WebApiHandler:
             return jsonify({"ok": False, "error": "list_id 不能为空"})
         count = await self._list_batch_coordinator.flush_list(list_id)
         return jsonify(
-            {"ok": True, "flushed": count, "message": f"已推送 {count} 条" if count else "队列为空"}
+            {
+                "ok": True,
+                "flushed": count,
+                "message": f"已触发 {count} 条发送" if count else "队列为空",
+            }
         )
 
     async def handle_clear_queue(self):
