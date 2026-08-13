@@ -669,8 +669,13 @@ class NotificationDispatcher:
                     effective_send_mode = self._resolve_send_mode(sub, user)
                     effective_media_urls = media_urls
                     effective_media_items = media_items
-                    # 统一发送模型：sender 不再消费 original layout。
-                    effective_layout = None
+                    # 统一发送模型：sender 不消费 original 文本排版；layout 仍承载
+                    # generated 媒体（如禁用缓存时的表格临时图）的 local_path / fallback。
+                    effective_layout = (
+                        list(processed_entry.layout)
+                        if processed_entry is not None and processed_entry.layout
+                        else None
+                    )
                     if not effective_options.display_media:
                         effective_media_urls = None
                         effective_media_items = None
@@ -784,12 +789,13 @@ class NotificationDispatcher:
                                 entry_key=build_entry_key(
                                     entry_guid or "", effective_link
                                 ),
+                                entry_guid=entry_guid or None,
                                 entry_title=effective_title,
                                 entry_link=effective_link,
                                 feed_title=feed_title,
                                 feed_link=feed_link,
                                 markdown_content=effective_content,
-                                media_items=normalized_media,
+                                media_items=effective_media_items or [],
                                 user_id=sub.user_id,
                                 target_session=str(sub.target_session or ""),
                                 platform_name=str(sub.platform_name or ""),
@@ -798,6 +804,9 @@ class NotificationDispatcher:
                                 stats["durably_queued"] = (
                                     stats.get("durably_queued", 0) + 1
                                 )
+                            elif enq.already_queued:
+                                # 条目已入队：规则性幂等，按 skipped 推进水位。
+                                stats["skipped"] += 1
                             else:
                                 stats["failed"] += 1
                                 record_error_detail(enq.error)

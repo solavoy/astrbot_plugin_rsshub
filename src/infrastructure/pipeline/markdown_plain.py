@@ -22,7 +22,9 @@ _ESCAPE = re.compile(r"\\([\\`*_{}\[\]()#+.!|=<>~-])")
 # 代码围栏整体还原为内部文本。
 _FENCE = re.compile(r"(?ms)^[ \t]*```.*?```[ \t]*$")
 _INLINE_CODE = re.compile(r"`([^`]+?)`")
-_INLINE_LINK = re.compile(r"\[([^\]]+?)\]\(([^)\s]+?)\)")
+# 链接 URL 支持一层 balanced 括号（如 Wikipedia 的 Foo_(bar)），
+# 避免 `([^)\s]+?)` 在第一个 `)` 处截断 URL。
+_INLINE_LINK = re.compile(r"\[([^\]]+?)\]\(((?:[^()]|\([^)]*\))+)\)")
 _INLINE_STRONG = re.compile(r"\*\*(.+?)\*\*")
 _INLINE_EM = re.compile(r"(?<!\*)\*([^*]+?)\*(?!\*)")
 _ATX_HEADING = re.compile(r"(?m)^(#{1,6})\s+(.+?)\s*#*\s*$")

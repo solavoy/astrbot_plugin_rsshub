@@ -25,7 +25,8 @@ from ....shared.constants import (
     QQ_OFFICIAL_PLATFORMS,
     TELEGRAM_PHOTO_MAX_BYTES,
 )
-from ...pipeline import MessageComponent, MessageFormatter
+from ...pipeline import EntryTextFormatter, MessageComponent, MessageFormatter
+from ...pipeline.markdown_plain import markdown_to_plain
 from ...utils import get_logger
 from ...utils.lock import locked
 from ...utils.media_type_detector import detect_media_file, detect_media_hint
@@ -1363,12 +1364,16 @@ class DefaultMessageSender:
             if effective_prepared:
                 failed_urls = self._collect_failed_urls(effective_prepared)
 
+            text = self._message_with_unavailable_generated_fallbacks(
+                request,
+                effective_prepared,
+            )
+            if not EntryTextFormatter.should_render_markdown(platform):
+                # 默认 sender 覆盖未专门适配的平台：非渲染平台降级为纯文本。
+                text = markdown_to_plain(text)
             chain = self._formatter.build_chain(
                 prepared_media=effective_prepared,
-                text=self._message_with_unavailable_generated_fallbacks(
-                    request,
-                    effective_prepared,
-                ),
+                text=text,
                 failed_urls=failed_urls,
                 platform=platform,
             )

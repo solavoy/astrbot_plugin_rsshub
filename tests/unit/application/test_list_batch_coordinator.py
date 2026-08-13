@@ -54,7 +54,8 @@ def test_render_title_link_groups_by_feed():
     assert part.kind == "aggregate"
     assert "# Tech" in part.markdown_content
     assert "## Feed0" in part.markdown_content and "## Feed1" in part.markdown_content
-    assert "https://e.com/x0" in part.markdown_content
+    # URL 按 MarkdownV2 转义（`.` -> `\.`）
+    assert "https://e\\.com/x0" in part.markdown_content
 
 
 def test_render_full_split_creates_entry_parts():
@@ -251,6 +252,11 @@ async def test_retry_batch_resends_only_failed_parts(temp_db_path):
     assert parts_after[1].state == "success"
     batch_after = await repo.get_batch(batch.id)
     assert batch_after.state == "success"
+    # 队列项应从 failed 回到 sent（mark_batch_items_sent 匹配 claimed+failed）
+    item1_after = await repo.get_queue_item(item1.id)
+    item2_after = await repo.get_queue_item(item2.id)
+    assert item1_after.state == "sent"
+    assert item2_after.state == "sent"
     await get_database().close()
 
 
@@ -324,6 +330,7 @@ async def test_summary_success_inserts_summary_part(temp_db_path):
             assert prompt == "请总结"
             return "## 总结内容"
 
+    fake = _FakeDispatcher()
     coordinator = ListBatchCoordinator(
         list_repo=repo,
         queue_repo=repo,
@@ -331,13 +338,86 @@ async def test_summary_success_inserts_summary_part(temp_db_path):
         renderer=ListBatchRenderer(),
         session_push_queue=SessionPushQueue(),
         summary_provider=_OkProvider(),
-        dispatcher=_FakeDispatcher(),
+        dispatcher=fake,
     )
     await coordinator.tick()
     batches = await repo.list_batches(lst.id)
     assert batches[0].state == "success"
     assert batches[0].summary_status == "success"
     assert "总结内容" in batches[0].summary_markdown
+    # AI 总结分片应实际发送到用户
+    assert any("总结内容" in msg for msg in fake.sent)
     parts = await repo.get_parts(batches[0].id)
     assert any(p.kind == "summary" for p in parts)
+    await get_database().close()
+
+
+def test_render_escapes_special_characters_in_title_and_link():
+    items = [
+        ListQueueItem(
+            list_id=1, sub_id=1, feed_id=1, push_history_id=1, entry_key="k",
+            entry_title="My *bold* [x]", entry_link="https://en.wikipedia.org/wiki/Foo_(bar)",
+            feed_title="Feed", feed_link="https://f.com", markdown_content="正文",
+        )
+    ]
+    part = ListBatchRenderer().render_title_link(
+        ListEntity(name="Tech", user_id="u1", target_session="s1", platform_name="telegram"),
+        items,
+    )[0]
+    assert "My \\*bold\\* \\[x\\]" in part.markdown_content
+    # URL 中 `(` `)` 转义为 `\(` `\)`
+    assert "Foo\\_\\(bar\\)" in part.markdown_content
+
+
+@pytest.mark.asyncio
+async def test_concurrent_flush_only_creates_one_batch(temp_db_path):
+    await get_database().init(str(temp_db_path))
+    repo = ListRepositoryImpl()
+    lst = await repo.save_list(
+        ListEntity(name="Tech", user_id="u1", target_session="s1", platform_name="telegram")
+    )
+    await repo.enqueue_item(_make_item(lst.id, 0))
+    coordinator = ListBatchCoordinator(
+        list_repo=repo,
+        queue_repo=repo,
+        batch_repo=repo,
+        renderer=ListBatchRenderer(),
+        session_push_queue=SessionPushQueue(),
+    )
+    results = await asyncio.gather(
+        coordinator.flush_list(lst.id),
+        coordinator.flush_list(lst.id),
+    )
+    # 只有一个调用 claim 到条目，另一个在锁内读到 0 返回
+    assert sorted(results) == [0, 1]
+    batches = await repo.list_batches(lst.id, limit=50)
+    assert len(batches) == 1
+    assert batches[0].state != "failed"  # 无幽灵失败批次
+    await get_database().close()
+
+
+@pytest.mark.asyncio
+async def test_recover_also_handles_ready_batches(temp_db_path):
+    await get_database().init(str(temp_db_path))
+    repo = ListRepositoryImpl()
+    lst = await repo.save_list(
+        ListEntity(name="Tech", user_id="u1", target_session="s1", platform_name="telegram")
+    )
+    item = await repo.enqueue_item(
+        ListQueueItem(list_id=lst.id, sub_id=1, feed_id=1, push_history_id=1, entry_key="a")
+    )
+    ready_batch = await repo.create_batch(ListBatch(list_id=lst.id, state="ready", item_count=1))
+    await repo.claim_items_for_batch(lst.id, ready_batch.id, limit=10)
+    coordinator = ListBatchCoordinator(
+        list_repo=repo,
+        queue_repo=repo,
+        batch_repo=repo,
+        renderer=ListBatchRenderer(),
+        session_push_queue=SessionPushQueue(),
+    )
+    await coordinator.recover()
+    recovered = await repo.get_batch(ready_batch.id)
+    assert recovered.state == "failed"
+    # 队列项回退为 queued，可被下一轮重新 claim
+    assert await repo.count_queued(lst.id) == 1
     await get_database().close()

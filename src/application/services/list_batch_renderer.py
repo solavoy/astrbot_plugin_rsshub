@@ -19,6 +19,17 @@ from ...domain.entities.list_entities import (
     ListEntity,
     ListQueueItem,
 )
+from ...infrastructure.pipeline.entry_formatter import EntryTextFormatter
+
+
+def _escape_md(value: str) -> str:
+    """按 Telegram MarkdownV2 转义标题等行内文本。"""
+    return EntryTextFormatter._escape_markdown_text(value or "")
+
+
+def _escape_md_url(value: str) -> str:
+    """按 Telegram MarkdownV2 转义链接 URL。"""
+    return EntryTextFormatter._escape_markdown_url(value or "")
 
 
 class ListBatchRenderer:
@@ -38,10 +49,13 @@ class ListBatchRenderer:
                 order.append(feed)
             grouped[feed].append(item)
         for feed in order:
-            lines.append(f"## {feed}")
+            lines.append(f"## {_escape_md(feed)}")
             for item in grouped[feed]:
                 link = item.entry_link or item.entry_link
-                lines.append(f"- [{item.entry_title or item.entry_key}]({link})")
+                lines.append(
+                    f"- [{_escape_md(item.entry_title or item.entry_key)}]"
+                    f"({_escape_md_url(link)})"
+                )
         return [
             ListBatchPart(
                 batch_id=0,
@@ -76,11 +90,11 @@ class ListBatchRenderer:
         for index, item in enumerate(items):
             if index > 0:
                 lines.append("---")
-            lines.append(f"## {item.entry_title or item.entry_key}")
+            lines.append(f"## {_escape_md(item.entry_title or item.entry_key)}")
             if item.markdown_content:
                 lines.append(item.markdown_content)
             if item.entry_link:
-                lines.append(f"原文：[查看原文]({item.entry_link})")
+                lines.append(f"原文：[查看原文]({_escape_md_url(item.entry_link)})")
         return [
             ListBatchPart(
                 batch_id=0,

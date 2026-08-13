@@ -11,6 +11,8 @@ from dataclasses import dataclass
 from typing import Any
 
 from ...domain.entities.list_entities import ListEntity
+from sqlalchemy.exc import IntegrityError
+
 from ...infrastructure.persistence.database import get_database
 from ...infrastructure.persistence.models import ListQueueItemORM, PushHistoryORM
 from ...infrastructure.utils import get_logger
@@ -26,6 +28,7 @@ class EnqueueResult:
     durably_queued: bool
     history_id: int | None = None
     error: str = ""
+    already_queued: bool = False
 
 
 class ListQueueService:
@@ -80,6 +83,7 @@ class ListQueueService:
         user_id: str,
         target_session: str,
         platform_name: str,
+        entry_guid: str | None = None,
         raw_xml: str | None = None,
     ) -> EnqueueResult:
         """把条目可靠写入 pending history + 队列项（同一事务）。
@@ -112,6 +116,7 @@ class ListQueueService:
                     media_urls=[url for _type, url in media_items] or None,
                     entry_title=entry_title or "",
                     entry_link=entry_link or "",
+                    entry_guid=(entry_guid or "").strip() or None,
                     feed_title=feed_title or "",
                     feed_link=feed_link or "",
                     platform_name=platform_name,
@@ -141,6 +146,14 @@ class ListQueueService:
                 return EnqueueResult(
                     durably_queued=True, history_id=int(history_orm.id or 0)
                 )
+        except IntegrityError:
+            # 唯一索引冲突：(list_id, sub_id, entry_key) 已存在，说明该条目已入队。
+            # 视为规则性幂等（already_queued），由 Dispatcher 计为 skipped 推进水位，
+            # 避免把重复条目算成硬失败导致 Feed 条件请求回滚卡住。
+            logger.debug(
+                "List 条目已入队（幂等）: list=%s sub=%s key=%s", list_id, sub_id, entry_key
+            )
+            return EnqueueResult(False, error="already queued", already_queued=True)
         except Exception as exc:
             logger.warning(
                 "List 入队失败: list=%s sub=%s key=%s err=%s",

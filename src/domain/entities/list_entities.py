@@ -6,6 +6,7 @@ List 是把多个订阅归为一组、按「条数阈值 + 最长等待」批量
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
@@ -26,11 +27,20 @@ def _now() -> datetime:
     return datetime.now(timezone.utc)
 
 
-def normalize_keywords(value: list[str] | tuple[str, ...] | None) -> list[str]:
-    """去空白、去空项、大小写不敏感去重、统一小写、保序。"""
+def normalize_keywords(
+    value: list[str] | tuple[str, ...] | str | None,
+) -> list[str]:
+    """去空白、去空项、大小写不敏感去重、统一小写、保序。
+
+    str 输入按逗号/中文逗号/换行拆分，避免逐字符误拆（chat 命令常传字符串）。
+    """
+    if isinstance(value, str):
+        parts = re.split(r"[,，\n]+", value)
+    else:
+        parts = value or ()
     seen: set[str] = set()
     result: list[str] = []
-    for item in value or []:
+    for item in parts:
         text = str(item or "").strip().lower()
         if not text:
             continue

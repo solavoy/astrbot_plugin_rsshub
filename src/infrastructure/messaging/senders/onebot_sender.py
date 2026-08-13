@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, Any
 
 from astrbot.api.message_components import Node, Nodes, Plain
 
+from ...pipeline.markdown_plain import markdown_to_plain
 from ...utils import get_logger
 from ..napcat_stream import upload_file_stream
 from .base_sender import DefaultMessageSender
@@ -242,6 +243,8 @@ class OneBotMessageSender(DefaultMessageSender):
                 fallback_message = (
                     self._message_with_all_generated_fallbacks(request) or "RSS update"
                 )
+                # OneBot 不渲染 Markdown：回退文本降级为纯文本。
+                fallback_message = markdown_to_plain(fallback_message)
                 fallback_text = self._append_failed_links(
                     fallback_message,
                     failed_urls,

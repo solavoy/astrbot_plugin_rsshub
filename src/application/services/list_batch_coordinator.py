@@ -155,6 +155,25 @@ class ListBatchCoordinator:
         batch.started_at = now
         await self._batch_repo.update_batch(batch)
 
+        try:
+            await self._send_batch_parts(list_entity, batch)
+        except asyncio.CancelledError:
+            # 批次发送被 /sub_stop 等取消：标记 failed 并回退队列项，
+            # 供启动恢复或页面重试继续；随后向上传播取消。
+            try:
+                batch.state = "failed"
+                batch.fail_reason = "send cancelled"
+                batch.completed_at = datetime.now(timezone.utc)
+                await self._batch_repo.update_batch(batch)
+                await self._queue_repo.requeue_batch_items(batch_id)
+            except Exception as exc:
+                logger.warning("取消批次 %s 清理失败: %s", batch_id, exc)
+            raise
+
+    async def _send_batch_parts(
+        self, list_entity: ListEntity, batch: Any
+    ) -> None:
+        batch_id = batch.id
         parts = await self._batch_repo.get_parts(batch_id)
         success_all = True
         target = SendTarget(
@@ -268,13 +287,17 @@ class ListBatchCoordinator:
                 items_title_link=title_links,
                 prompt=list_entity.ai_summary_prompt,
             )
-            batch.summary_status = "success"
             batch.summary_markdown = summary_text
-            await self._batch_repo.update_batch(batch)
             summary_part = self._renderer.make_summary_part(
                 batch.id, len(parts), summary_text
             )
             await self._batch_repo.insert_parts([summary_part])
+            # 发送总结分片：失败只影响总结，正文批次保持 success（fail-open）。
+            summary_ok = await self._send_summary_part(list_entity, summary_part)
+            batch.summary_status = "success" if summary_ok else "failed"
+            if not summary_ok and summary_part.fail_reason:
+                batch.fail_reason = summary_part.fail_reason[:500]
+            await self._batch_repo.update_batch(batch)
         except Exception as exc:
             logger.warning(
                 "List 批次 %s AI 总结失败（正文已成功）: %s", batch.id, exc
@@ -283,17 +306,54 @@ class ListBatchCoordinator:
             batch.fail_reason = str(exc)[:500]
             await self._batch_repo.update_batch(batch)
 
+    async def _send_summary_part(
+        self, list_entity: ListEntity, part: Any
+    ) -> bool:
+        """发送单个 AI 总结分片，返回是否成功。"""
+        if self._dispatcher is None:
+            return False
+        try:
+            result = await self._dispatcher.send_to_session_now(
+                target=SendTarget(
+                    user_id=list_entity.user_id,
+                    platform_name=list_entity.platform_name,
+                    target_session=list_entity.target_session,
+                ),
+                content=part.markdown_content,
+                media_urls=None,
+                media_items=list(part.media_items) or None,
+                job_description=f"list={list_entity.id}, batch={part.batch_id}, summary",
+            )
+            if result.get("ok"):
+                part.state = "success"
+                part.sent_at = datetime.now(timezone.utc)
+                part.fail_reason = ""
+                await self._batch_repo.update_part(part)
+                return True
+            part.state = "failed"
+            part.fail_reason = str(result.get("error") or "summary send failed")
+            await self._batch_repo.update_part(part)
+            return False
+        except Exception as exc:
+            logger.warning("List 批次 %s AI 总结分片发送失败: %s", part.batch_id, exc)
+            part.state = "failed"
+            part.fail_reason = str(exc)[:500]
+            await self._batch_repo.update_part(part)
+            return False
+
     async def flush_list(self, list_id: int) -> int:
         """立即把当前排队项 claim 为一个批次并发送（Plugin Pages 手动触发）。"""
         list_entity = await self._list_repo.get_list(list_id)
         if list_entity is None:
             return 0
-        count = await self._queue_repo.count_queued(list_id)
-        if count <= 0:
-            return 0
         async with self._lock_for(list_id):
+            # 锁内重查 count：并发 flush 或 tick 已 claim 后，这里读到 0 直接返回，
+            # 避免第二个调用创建 0 条 claim 的幽灵失败批次。
+            count = await self._queue_repo.count_queued(list_id)
+            if count <= 0:
+                return 0
             await self._create_batch(list_entity, claim_limit=count)
-        return count
+            return count
 
     async def retry_batch(self, batch_id: int) -> None:
         """重发 failed 批次中未成功的分片。"""

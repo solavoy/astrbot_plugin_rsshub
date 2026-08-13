@@ -54,3 +54,11 @@ def test_batch_and_part_defaults():
     assert part.state == "pending"
     part_item = ListBatchPartItem(batch_part_id=1, queue_item_id=2)
     assert part_item.id is None
+
+
+def test_normalize_keywords_splits_string_input():
+    # str 输入按逗号/换行拆分，而不是逐字符
+    assert normalize_keywords("python, AI,  python") == ["python", "ai"]
+    assert normalize_keywords("linux\npython") == ["linux", "python"]
+    assert normalize_keywords("") == []
+    assert normalize_keywords(None) == []

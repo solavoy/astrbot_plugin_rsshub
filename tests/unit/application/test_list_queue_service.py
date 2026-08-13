@@ -37,6 +37,7 @@ async def test_enqueue_durable_writes_history_and_queue_atomically(temp_db_path)
         sub_id=1,
         feed_id=1,
         entry_key="k",
+        entry_guid="guid-1",
         entry_title="T",
         entry_link="https://e.com/1",
         feed_title="F",
@@ -49,9 +50,10 @@ async def test_enqueue_durable_writes_history_and_queue_atomically(temp_db_path)
     )
     assert result.durably_queued is True and result.history_id is not None
     assert await repo.count_queued(lst.id) == 1
-    # push_history 应存在且为 pending
+    # push_history 应存在且为 pending，并写入 entry_guid 供成功去重使用
     history = await PushHistoryRepositoryImpl().get_by_id(result.history_id)
     assert history is not None and history.status == "pending"
+    assert history.entry_guid == "guid-1"
     await get_database().close()
 
 
@@ -118,6 +120,7 @@ async def test_enqueue_durable_is_idempotent_on_duplicate_key(temp_db_path):
         platform_name="telegram",
     )
     assert second.durably_queued is False  # 唯一约束：不重复入队
+    assert second.already_queued is True  # 视为规则性幂等，不计硬失败
     assert await repo.count_queued(lst.id) == 1
     await get_database().close()
 

@@ -66,3 +66,23 @@ def test_returns_empty_string_for_empty_input():
 def test_keeps_plain_text_unchanged():
     text = "普通文本，没有 Markdown 语法。"
     assert markdown_to_plain(text) == text
+
+
+def test_markdown_to_plain_keeps_paren_urls_intact():
+    from astrbot_plugin_rsshub.src.infrastructure.pipeline.markdown_plain import (
+        markdown_to_plain,
+    )
+
+    text = "via [t](https://en.wikipedia.org/wiki/Foo_(bar))"
+    out = markdown_to_plain(text)
+    assert "Foo_(bar))" in out  # 括号 URL 不被截断
+    assert "https://en.wikipedia.org/wiki/Foo_(bar)" in out
+
+
+def test_markdown_to_plain_plain_link_still_works():
+    from astrbot_plugin_rsshub.src.infrastructure.pipeline.markdown_plain import (
+        markdown_to_plain,
+    )
+
+    out = markdown_to_plain("[a](https://e.com)")
+    assert out == "a (https://e.com)"

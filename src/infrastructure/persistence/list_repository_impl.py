@@ -257,7 +257,25 @@ class ListRepositoryImpl:
             return int(result.rowcount or 0)
 
     async def mark_batch_items_sent(self, batch_id: int) -> int:
-        return await self._mark_batch_items(batch_id, "sent")
+        """把批次内已发送的队列项置为 sent。
+
+        重试路径下队列项可能处于 failed（首轮部分失败后 mark_batch_items_failed
+        已把 claimed 全部置 failed）；重试成功时同样应回到 sent，因此匹配
+        claimed 与 failed 两种状态。
+        """
+        db = get_database()
+        async with db.get_session() as session:
+            stmt = (
+                update(ListQueueItemORM)
+                .where(
+                    ListQueueItemORM.batch_id == batch_id,
+                    ListQueueItemORM.state.in_(("claimed", "failed")),
+                )
+                .values(state="sent")
+            )
+            result = await session.execute(stmt)
+            await session.commit()
+            return int(result.rowcount or 0)
 
     async def mark_batch_items_failed(self, batch_id: int, reason: str) -> int:
         db = get_database()
@@ -334,21 +352,6 @@ class ListRepositoryImpl:
             await session.commit()
             return int(result.rowcount or 0)
 
-    async def _mark_batch_items(self, batch_id: int, state: str) -> int:
-        db = get_database()
-        async with db.get_session() as session:
-            stmt = (
-                update(ListQueueItemORM)
-                .where(
-                    ListQueueItemORM.batch_id == batch_id,
-                    ListQueueItemORM.state == "claimed",
-                )
-                .values(state=state)
-            )
-            result = await session.execute(stmt)
-            await session.commit()
-            return int(result.rowcount or 0)
-
     # ============================ batches ============================
 
     async def create_batch(self, batch: ListBatch) -> ListBatch:
@@ -406,7 +409,7 @@ class ListRepositoryImpl:
         async with db.get_session() as session:
             stmt = (
                 select(ListBatchORM)
-                .where(ListBatchORM.state.in_(("preparing", "sending")))
+                .where(ListBatchORM.state.in_(("preparing", "ready", "sending")))
                 .order_by(asc(ListBatchORM.id))
                 .limit(limit)
             )

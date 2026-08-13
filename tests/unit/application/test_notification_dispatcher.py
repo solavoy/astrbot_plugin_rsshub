@@ -1038,8 +1038,8 @@ async def test_dispatch_ignores_layout_and_formats_markdown_with_length_limit():
 
     assert stats == {"success": 1, "failed": 0, "pending": 0, "skipped": 0}
     request, context = sender.requests[0]
-    # original 排版已移除：layout 不再传递给 sender
-    assert request.layout is None
+    # original 排版已移除：layout 只承载 generated 媒体映射，不参与正文排版。
+    assert request.layout is not None
     assert "**Title**" in request.message
     assert request.media == [
         ("image", "https://example.com/a.jpg"),
@@ -1090,8 +1090,9 @@ async def test_dispatch_keeps_original_layout_text_when_length_limit_disabled():
     )
 
     request, _context = sender.requests[0]
-    # original 排版已移除：layout 不再传递给 sender
-    assert request.layout is None
+    # original 排版已移除：layout 不参与正文，正文为规范 Markdown。
+    assert request.layout is not None
+    assert "abcdefghij" not in request.message
 
 
 @pytest.mark.asyncio
@@ -1145,8 +1146,8 @@ async def test_dispatch_clears_original_layout_when_media_hidden():
     )
 
     request, _context = sender.requests[0]
-    assert request.media is None
-    assert request.layout is None
+    assert request.media is None  # display_media 关闭：媒体被抑制
+    assert request.layout is not None  # layout 仍承载 generated 映射，但无媒体可发
 
 
 @pytest.mark.asyncio
@@ -1201,8 +1202,8 @@ async def test_dispatch_link_only_clears_original_layout():
 
     request, _context = sender.requests[0]
     assert request.message == "Title\nhttps://example.com/entry"
-    assert request.media is None
-    assert request.layout is None
+    assert request.media is None  # link_only：媒体被抑制
+    assert request.layout is not None  # layout 承载 generated 映射，不参与正文
 
 
 @pytest.mark.asyncio
@@ -2069,6 +2070,7 @@ async def test_dispatch_routes_list_subscription_to_durable_enqueue():
     call_kwargs = list_queue.enqueue_durable.call_args.kwargs
     assert call_kwargs["list_id"] == 5
     assert call_kwargs["entry_key"] == "guid-1"
+    assert call_kwargs["entry_guid"] == "guid-1"
 
 
 @pytest.mark.asyncio
@@ -2218,3 +2220,59 @@ async def test_dispatch_list_subscription_disabled_list_skips_new_entries():
     assert stats["success"] == 0
     assert len(sender.requests) == 0
     list_queue.enqueue_durable.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_dispatch_list_subscription_respects_display_media_off():
+    """List 订阅 display_media 关闭时入队不带媒体。"""
+    from astrbot_plugin_rsshub.src.domain.entities.list_entities import ListEntity
+
+    sender = FakeSender()
+    sub = Subscription(
+        id=1,
+        user_id="user-1",
+        feed_id=10,
+        platform_name="telegram",
+        target_session="telegram:Group:1",
+        list_id=5,
+        display_media=-1,  # 禁用媒体
+    )
+    sub_repo = AsyncMock()
+    sub_repo.get_active_by_feed_id.return_value = [sub]
+    history_repo = AsyncMock()
+    history_repo.exists_success_by_scope_and_guid.return_value = False
+    history_repo.save.side_effect = lambda history: history
+    user_repo = AsyncMock()
+    user_repo.get_or_create.return_value = User(id="user-1")
+
+    list_queue = AsyncMock()
+    list_queue.load_list.return_value = ListEntity(
+        id=5, name="Tech", user_id="user-1",
+        target_session="telegram:Group:1", platform_name="telegram",
+    )
+    list_queue.filter_for_list = MagicMock(
+        return_value=SimpleNamespace(allowed=True, reason="")
+    )
+    list_queue.enqueue_durable.return_value = SimpleNamespace(
+        durably_queued=True, history_id=99, error="", already_queued=False
+    )
+
+    dispatcher = NotificationDispatcher(
+        subscription_repo=sub_repo,
+        push_history_repo=history_repo,
+        sender_provider=FakeSenderProvider(sender),
+        user_repo=user_repo,
+        list_queue_service=list_queue,
+    )
+
+    await dispatcher.dispatch_to_feed_subscribers(
+        feed_id=10,
+        content="content",
+        entry_title="title",
+        entry_link="https://example.com/entry",
+        entry_guid="guid-1",
+        media_items=[("image", "https://example.com/pic.jpg")],
+    )
+
+    call_kwargs = list_queue.enqueue_durable.call_args.kwargs
+    assert call_kwargs["media_items"] == []  # 媒体被抑制
