@@ -10,15 +10,7 @@ import {
   retryListBatch,
   updateList,
 } from '../../js/api.js';
-import { createEmptyListEditForm } from '../helpers.js';
-
-function toKeywordList(value) {
-  if (!value) return [];
-  return String(value)
-    .split(/[,，\n]+/)
-    .map((item) => item.trim())
-    .filter(Boolean);
-}
+import { createEmptyListEditForm, toKeywordList } from '../helpers.js';
 
 export const listsModule = {
   async loadLists() {

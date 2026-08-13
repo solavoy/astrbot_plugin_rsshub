@@ -42,28 +42,14 @@ class MessageChainFormatter:
             platform=platform,
         )
 
-    def build_chain(
+    def build_chain_from_components(
         self,
-        prepared_media: list[PreparedMedia] | None,
-        text: str,
-        failed_urls: list[str],
+        components: list[MessageComponent],
         platform: str = "",
     ) -> list:
-        """
-        构建最终消息链
-
-        Args:
-            prepared_media: 预处理后的媒体列表
-            text: 文本内容
-            failed_urls: 下载失败的媒体 URL 列表（可为空，内部会从 prepared_media 补充）
-            platform: 平台名称（onebot/telegram/qidian/...）
-
-        Returns:
-            已排好序的消息链 list，可直接传入 MessageChain
-        """
+        """把平台无关组件转为最终消息链；Telegram 重排为 media → caption → tails。"""
         if platform == "telegram":
-            return self._build_telegram_chain(prepared_media, text, failed_urls)
-        components = self.build_components(prepared_media, text, failed_urls, platform)
+            return self._telegram_components_to_chain(components)
         return self._components_to_chain(components)
 
     @staticmethod
@@ -116,36 +102,18 @@ class MessageChainFormatter:
                         )
         return chain
 
-    def _build_default_chain(
-        self,
-        prepared_media: list[PreparedMedia] | None,
-        text: str,
-        failed_urls: list[str],
-    ) -> list:
-        """通用消息链顺序：images → Plain → tails"""
-        components = self.build_components(prepared_media, text, failed_urls)
-        return self._components_to_chain(components)
-
     # ------------------------------------------------------------------
     # Telegram：media → caption（含失败链接）→ tails
     # ------------------------------------------------------------------
 
-    def _build_telegram_chain(
+    def _telegram_components_to_chain(
         self,
-        prepared_media: list[PreparedMedia] | None,
-        text: str,
-        failed_urls: list[str],
+        components: list[MessageComponent],
     ) -> list:
         """Telegram 消息链：media → Plain(caption) → tails"""
         from astrbot.api.message_components import Plain
 
         chain: list = []
-        components = self.build_components(
-            prepared_media,
-            text,
-            failed_urls,
-            platform="telegram",
-        )
         has_media = False
 
         for component in components:
@@ -178,7 +146,3 @@ class MessageChainFormatter:
     def _append_failed_links(text: str, failed_urls: list[str]) -> str:
         """将下载失败的媒体链接追加到文本末尾"""
         return MessageComponentSorter.append_failed_links(text, failed_urls)
-
-
-# 兼容旧导入名；新代码优先使用 MessageChainFormatter。
-MessageFormatter = MessageChainFormatter

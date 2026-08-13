@@ -18,7 +18,6 @@ class MessageContext:
     entry_link: str = ""
     platform_name: str = ""
     send_mode: int | None = None
-    style: int = 0
     sender_strategy: Any = None
     render_markdown: bool = False
 

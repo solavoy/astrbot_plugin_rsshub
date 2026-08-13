@@ -14,16 +14,6 @@ class UserState(IntEnum):
     USER = 1
 
 
-class EntityState(IntEnum):
-    DISABLED = 0
-    ENABLED = 1
-
-
-class NotifyState(IntEnum):
-    DISABLED = 0
-    ENABLED = 1
-
-
 class SendMode(IntEnum):
     LINK_ONLY = -1
     AUTO = 0
@@ -41,20 +31,6 @@ class DisplayVia(IntEnum):
     LINK_ONLY = -1
     AUTO = 0
     FORCED = 1
-
-
-class SourceType(str, Enum):
-    FEED = "feed"
-    AGENT = "agent"
-
-
-class PushStatus(str, Enum):
-    PENDING = "pending"
-    SUCCESS = "success"
-    FAILED = "failed"
-    STOPPED = "stopped"
-    SKIPPED = "skipped"
-    RETRYING = "retrying"
 
 
 class PlatformName(str, Enum):
@@ -81,62 +57,12 @@ class PlatformStrategyTemplate(str, Enum):
     QQ_OFFICIAL = "qq_official_strategy"
 
 
-class HandlerStatus(IntEnum):
-    INHERIT = -100
-    DISABLED = 0
-    ENABLED = 1
-
-
-class HandlerType(str, Enum):
-    BUILTIN = "builtin"
-    EXTERNAL = "external"
-
-
-class HandlerFieldType(str, Enum):
-    STRING = "string"
-    TEXT = "text"
-    BOOL = "bool"
-    INT = "int"
-    FLOAT = "float"
-    SELECT = "select"
-    LIST_STRING = "list[string]"
-    JSON = "json"
-
-
-class HandlerTraceStatus(str, Enum):
-    OK = "ok"
-    DISABLED = "disabled"
-    SKIPPED = "skipped"
-    ERROR = "error"
-
-
-class AiFilterInputScope(str, Enum):
-    TEXT = "text"
-    RAW_XML = "raw_xml"
-    BOTH = "both"
-
-
-class AiTransformScope(str, Enum):
-    PLAINTEXT = "plaintext"
-    XML = "xml"
-
-
 USER_STATE_BANNED = int(UserState.BANNED)
 USER_STATE_USER = int(UserState.USER)
-USER_STATES = {int(item) for item in UserState}
-
-STATE_DISABLED = int(EntityState.DISABLED)
-STATE_ENABLED = int(EntityState.ENABLED)
-ENTITY_STATES = {int(item) for item in EntityState}
-
-NOTIFY_DISABLED = int(NotifyState.DISABLED)
-NOTIFY_ENABLED = int(NotifyState.ENABLED)
-NOTIFY_STATES = {int(item) for item in NotifyState}
 
 SEND_MODE_LINK_ONLY = int(SendMode.LINK_ONLY)
 SEND_MODE_AUTO = int(SendMode.AUTO)
 SEND_MODE_DIRECT = int(SendMode.DIRECT)
-SEND_MODES = {int(item) for item in SendMode}
 
 DISPLAY_DISABLED = int(DisplayToggle.DISABLED)
 DISPLAY_AUTO = int(DisplayToggle.AUTO)
@@ -147,20 +73,7 @@ DISPLAY_VIA_LINK_ONLY = int(DisplayVia.LINK_ONLY)
 DISPLAY_VIA_AUTO = int(DisplayVia.AUTO)
 DISPLAY_VIA_FORCED = int(DisplayVia.FORCED)
 
-SOURCE_TYPE_FEED = SourceType.FEED.value
-SOURCE_TYPE_AGENT = SourceType.AGENT.value
-SOURCE_TYPES = {item.value for item in SourceType}
-
-PUSH_STATUS_PENDING = PushStatus.PENDING.value
-PUSH_STATUS_SUCCESS = PushStatus.SUCCESS.value
-PUSH_STATUS_FAILED = PushStatus.FAILED.value
-PUSH_STATUS_STOPPED = PushStatus.STOPPED.value
-PUSH_STATUS_SKIPPED = PushStatus.SKIPPED.value
-PUSH_STATUS_RETRYING = PushStatus.RETRYING.value
-PUSH_STATUSES = {item.value for item in PushStatus}
-
 PLATFORM_TELEGRAM = PlatformName.TELEGRAM.value
-PLATFORM_TELEGRAM_ALIAS = PlatformAlias.TELEGRAM_SHORT.value
 PLATFORM_ONEBOT = PlatformName.ONEBOT.value
 PLATFORM_ONEBOT_ALIASES = (
     PlatformAlias.ONEBOT.value,
@@ -177,10 +90,6 @@ PLATFORM_WEIXIN_ALIASES = (
     PlatformAlias.WECHAT.value,
     PlatformAlias.WEIXIN.value,
 )
-
-PLATFORM_STRATEGY_TEMPLATE_TELEGRAM = PlatformStrategyTemplate.TELEGRAM.value
-PLATFORM_STRATEGY_TEMPLATE_ONEBOT = PlatformStrategyTemplate.ONEBOT.value
-PLATFORM_STRATEGY_TEMPLATE_QQ_OFFICIAL = PlatformStrategyTemplate.QQ_OFFICIAL.value
 
 TELEGRAM_PHOTO_MAX_BYTES = 10 * 1024 * 1024
 TELEGRAM_ANIMATION_MAX_BYTES = 50 * 1024 * 1024

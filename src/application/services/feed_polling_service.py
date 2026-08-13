@@ -19,25 +19,16 @@ from itertools import chain
 from typing import Any
 from urllib.parse import parse_qsl, urlencode, urljoin, urlparse, urlunparse
 
-from ...domain.entities.content_types import (
-    AudioContent,
-    EntryContentContext,
-    FileContent,
-    VideoContent,
-)
 from ...domain.entities.feed import Feed, normalize_entry_hashes
 from ...domain.repositories.feed_repository import FeedRepository
 from ...domain.repositories.subscription_repository import SubscriptionRepository
 from ...infrastructure.config import FeedFetchSettings, RSSSettings
 from ...infrastructure.pipeline import (
-    EffectivePushOptions,
-    EntryFormatInput,
     EntryTextFormatter,
 )
-from ...infrastructure.pipeline.entry_formatter import normalize_plain_text
 from ...infrastructure.utils import get_logger
 from ..ports import FeedFetcherFactory, FeedParser, MediaFingerprintService
-from .html_parser import HTMLParser
+from .entry_dispatch_publisher import EntryDispatchPublisher
 from .notification_dispatcher import NotificationDispatcher
 
 logger = get_logger()
@@ -122,6 +113,15 @@ class FeedPollingService:
         self._notification_dispatcher = notification_dispatcher
         self._media_fingerprint_service = media_fingerprint_service
         self._history_entry_limit = max(0, history_entry_limit)
+        self._publisher = EntryDispatchPublisher(
+            dispatcher=notification_dispatcher,
+            media_fingerprint_service=media_fingerprint_service,
+            tracking_query_params=(
+                self._rss_settings.tracking_query_params
+                if self._rss_settings.tracking_query_params
+                else None
+            ),
+        )
 
     async def fetch_feed_entries(
         self,
@@ -650,81 +650,11 @@ class FeedPollingService:
             sorted_entries = sorted_entries[: self._history_entry_limit]
 
         for entry in sorted_entries:
-            title = str(self._entry_value(entry, "title") or "")
-            link = self._resolve_entry_link(entry, feed.link)
-            guid = self._entry_identity(entry)
-            author = str(self._entry_value(entry, "author") or "").strip()
-            raw_content = str(
-                self._entry_value(entry, "content")
-                or self._entry_value(entry, "summary")
-                or title
-            )
-            parsed = await HTMLParser(raw_content, feed_link=feed.link).parse()
-            plain_content = await _entry_text_formatter.clean_text(raw_content)
-            if any(isinstance(m, (AudioContent, VideoContent)) for m in parsed.media):
-                plain_content = self._remove_media_placeholders(plain_content)
-            media_items = self._media_items_from_parsed(parsed.media)
-            media_urls = [url for _, url in media_items]
-            enclosure_urls = [
-                str(self._entry_value(enclosure, "url"))
-                for enclosure in (self._entry_value(entry, "enclosures", []) or [])
-                if self._entry_value(enclosure, "url")
-            ]
-            media_urls.extend(enclosure_urls)
-            media_urls = list(dict.fromkeys(media_urls))
-            tags = tuple(self._entry_value(entry, "tags", []) or ())
-            content = await self._format_dispatch_content_async(
-                title=title,
-                body=plain_content,
-                link=link,
-                feed_title=feed.title,
-                feed_link=feed.link,
-                author=author,
-                tags=tags,
-            )
-            if self._media_fingerprint_service is not None and media_urls:
-                try:
-                    media_hashes = (
-                        await self._media_fingerprint_service.fingerprint_urls(
-                            media_urls
-                        )
-                    )
-                    if media_hashes:
-                        logger.debug(
-                            "poll_feed: media fingerprints calculated for feed=%s, count=%s",
-                            feed.id,
-                            len(media_hashes),
-                        )
-                except Exception as ex:
-                    logger.debug(
-                        "poll_feed: media fingerprint skipped: feed=%s, err=%s",
-                        feed.id,
-                        ex,
-                    )
-            stats = await self._notification_dispatcher.dispatch_to_feed_subscribers(
-                feed_id=feed.id,
-                content=content,
-                entry_title=title,
-                entry_link=link,
-                feed_title=feed.title,
-                feed_link=feed.link,
-                media_urls=media_urls,
-                media_items=media_items,
-                entry_guid=guid,
+            stats = await self._publisher.publish(
+                feed=feed,
+                entry=entry,
+                feed_url=feed.link,
                 subscription_ids=subscription_ids,
-                raw_entry=EntryContentContext(
-                    title=title,
-                    summary=plain_content,
-                    content=plain_content,
-                    link=link,
-                    author=author,
-                    feed_title=feed.title,
-                    feed_link=feed.link,
-                    raw_xml=str(getattr(entry, "raw_xml", "") or "").strip(),
-                    media_urls=tuple(media_urls),
-                    media_items=tuple(media_items),
-                    layout=tuple(parsed.layout),
-                ),
             )
             dispatched += (
                 stats.get("success", 0)
@@ -750,104 +680,6 @@ class FeedPollingService:
             and pending == 0
             and (success + skipped + durably_queued) > 0
         )
-
-    @staticmethod
-    def _format_dispatch_content(
-        *,
-        title: str,
-        body: str,
-        link: str,
-        feed_title: str,
-        feed_link: str,
-        author: str,
-    ) -> str:
-        body = normalize_plain_text(body)
-        title = normalize_plain_text(title)
-        author = normalize_plain_text(author)
-        feed_title = normalize_plain_text(feed_title)
-        link = str(link or "").strip()
-        feed_link = str(feed_link or "").strip()
-
-        body = EntryTextFormatter._remove_repeated_title(body, title)
-        lines = [part for part in (title, body) if part]
-        content = "\n\n".join(lines)
-        via_suffix = EntryTextFormatter._build_via_suffix(
-            link=link,
-            feed_title=feed_title,
-            feed_link=feed_link,
-            author=author,
-            options=EffectivePushOptions(),
-        )
-        if via_suffix:
-            return f"{content}\n\n{via_suffix}" if content else via_suffix
-        return content
-
-    @staticmethod
-    async def _format_dispatch_content_async(
-        *,
-        title: str,
-        body: str,
-        link: str,
-        feed_title: str,
-        feed_link: str,
-        author: str,
-        tags: tuple[str, ...] = (),
-    ) -> str:
-        return await _entry_text_formatter.format_entry(
-            EntryFormatInput(
-                title=title,
-                content=body,
-                summary=body,
-                link=link,
-                author=author,
-                feed_title=feed_title,
-                feed_link=feed_link,
-                tags=tags,
-            ),
-            EffectivePushOptions(),
-        )
-
-    @staticmethod
-    def _remove_media_placeholders(text: str) -> str:
-        text = re.sub(r"(?m)^\s*\[(视频|音频)\]\s*$\n?", "", text or "")
-        text = re.sub(r"[ \t]*(\[视频\]|\[音频\])[ \t]*", " ", text)
-        text = re.sub(r"\n{3,}", "\n\n", text)
-        text = re.sub(r"[ \t]{2,}", " ", text)
-        return text.strip()
-
-    @staticmethod
-    def _media_items_from_parsed(media: list[Any]) -> list[tuple[str, str]]:
-        items: list[tuple[str, str]] = []
-        for item in media:
-            url = str(getattr(item, "url", "") or "").strip()
-            if not url:
-                continue
-            if isinstance(item, VideoContent):
-                media_type = "video"
-            elif isinstance(item, AudioContent):
-                media_type = "audio"
-            elif isinstance(item, FileContent):
-                media_type = "file"
-            else:
-                media_type = "image"
-            items.append((media_type, url))
-        return list(dict.fromkeys(items))
-
-    @staticmethod
-    def _normalize_processed_media_items(
-        media_items: Any,
-        media_urls: list[str],
-    ) -> list[tuple[str, str]]:
-        explicit: list[tuple[str, str]] = []
-        if isinstance(media_items, (list, tuple)):
-            for item in media_items:
-                if not isinstance(item, (list, tuple)) or len(item) < 2:
-                    continue
-                media_type = str(item[0] or "").strip()
-                url = str(item[1] or "").strip()
-                if media_type and url:
-                    explicit.append((media_type, url))
-        return list(dict.fromkeys(explicit))
 
     def _entry_sort_key(self, entry: Any) -> Any:
         return (

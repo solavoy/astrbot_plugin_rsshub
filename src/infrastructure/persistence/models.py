@@ -69,7 +69,6 @@ class UserORM(RSSHubBaseModel, table=True):
         max_length=255,
         description="默认推送目标会话(unified_msg_origin)",
     )
-    needs_binding_notice: int = Field(default=0, description="是否需要提示绑定推送目标")
 
     created_at: datetime = Field(
         default_factory=lambda: datetime.now(timezone.utc),

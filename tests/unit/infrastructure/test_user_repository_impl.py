@@ -48,7 +48,6 @@ async def test_save_updates_existing_without_insert(monkeypatch):
         display_entry_tags=-100,
         display_media=-100,
         default_target_session=None,
-        needs_binding_notice=0,
         created_at=datetime.now(timezone.utc),
         updated_at=datetime.now(timezone.utc),
     )

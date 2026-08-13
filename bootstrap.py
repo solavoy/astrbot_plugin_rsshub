@@ -130,7 +130,9 @@ class PluginDeps(TypedDict, total=False):
     polling_service: FeedPollingService
     feed_repo: FeedRepository
     subscription_repo: SubscriptionRepository
+    user_repo: Any
     push_history_repo: Any
+    list_repo: Any
     notification_dispatcher: NotificationDispatcher
     list_queue_service: ListQueueService
     list_batch_coordinator: ListBatchCoordinator
@@ -523,7 +525,9 @@ async def _build_dependencies(
         polling_service=polling_service,
         feed_repo=feed_repo,
         subscription_repo=sub_repo,
+        user_repo=user_repo,
         push_history_repo=push_history_repo,
+        list_repo=list_repo,
         notification_dispatcher=notification_dispatcher,
         list_queue_service=list_queue_service,
         list_batch_coordinator=list_batch_coordinator,
@@ -583,13 +587,13 @@ def _register_web_api(
         polling_service=deps["polling_service"],
         feed_repo=deps["feed_repo"],
         sub_repo=deps["subscription_repo"],
-        user_repo=get_user_repository(),
-        push_history_repo=get_push_history_repository(),
+        user_repo=deps["user_repo"],
+        push_history_repo=deps["push_history_repo"],
         notification_dispatcher=deps["notification_dispatcher"],
         config=config,
         raw_config=raw_config,
         list_queue_service=deps.get("list_queue_service"),
-        list_repo=get_list_repository(),
+        list_repo=deps.get("list_repo"),
         list_batch_coordinator=deps.get("list_batch_coordinator"),
     )
     web_api.register_all(context)

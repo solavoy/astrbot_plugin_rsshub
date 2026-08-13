@@ -5,8 +5,10 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 from enum import Enum
+from typing import Any
 
 from ...application.services.html_parser import HTMLParser
+from ...domain.entities.content_types import AudioContent, FileContent, VideoContent
 from ...shared.constants import PLATFORM_ALIASES
 from ..rendering import cleanup_ephemeral_generated_media_paths
 from ..utils import get_logger
@@ -54,6 +56,9 @@ class EntryFormatInput:
     feed_title: str = ""
     feed_link: str = ""
     tags: tuple[str, ...] = field(default_factory=tuple)
+    # 调用方已完成 HTML 清洗的纯文本正文；非空时 format_entry 直接使用，
+    # 跳过对 content 的重复 HTML 解析（消除三重解析）。
+    pre_parsed_plain: str = ""
 
 
 class EntryTextFormatter:
@@ -82,12 +87,15 @@ class EntryTextFormatter:
                 output_format,
             )
             output_format = EntryOutputFormat.MARKDOWN
-        body = await self.clean_text(
-            entry.content or entry.summary or "",
-            render_tables_as_images=(
-                options.display_media and self._table_to_image_enabled
-            ),
-        )
+        if entry.pre_parsed_plain:
+            body = entry.pre_parsed_plain
+        else:
+            body = await self.clean_text(
+                entry.content or entry.summary or "",
+                render_tables_as_images=(
+                    options.display_media and self._table_to_image_enabled
+                ),
+            )
         title = await self.clean_text(entry.title)
         author = await self.clean_text(entry.author)
         feed_title = await self.clean_text(entry.feed_title)
@@ -325,4 +333,53 @@ def normalize_plain_text(value: str) -> str:
 def remove_media_placeholders(value: str) -> str:
     text = re.sub(r"(?m)^\s*\[(视频|音频|表格已转为图片)\]\s*$\n?", "", value or "")
     text = re.sub(r"[ \t]*(\[视频\]|\[音频\]|\[表格已转为图片\])[ \t]*", " ", text)
-    return text
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    text = re.sub(r"[ \t]{2,}", " ", text)
+    return text.strip()
+
+
+async def format_dispatch_content(
+    *,
+    title: str,
+    body: str,
+    link: str,
+    feed_title: str,
+    feed_link: str,
+    author: str,
+    tags: tuple[str, ...] = (),
+) -> str:
+    """格式化已清洗的条目正文为规范 Markdown（body 为 plain，跳过重复解析）。"""
+    formatter = EntryTextFormatter()
+    return await formatter.format_entry(
+        EntryFormatInput(
+            title=title,
+            content=body,
+            summary=body,
+            pre_parsed_plain=body,
+            link=link,
+            author=author,
+            feed_title=feed_title,
+            feed_link=feed_link,
+            tags=tags,
+        ),
+        EffectivePushOptions(),
+    )
+
+
+def media_items_from_parsed(media: list[Any]) -> list[tuple[str, str]]:
+    """把解析后的媒体对象列表转为 (type, url) 元组，按首现顺序去重。"""
+    items: list[tuple[str, str]] = []
+    for item in media:
+        url = str(getattr(item, "url", "") or "").strip()
+        if not url:
+            continue
+        if isinstance(item, VideoContent):
+            media_type = "video"
+        elif isinstance(item, AudioContent):
+            media_type = "audio"
+        elif isinstance(item, FileContent):
+            media_type = "file"
+        else:
+            media_type = "image"
+        items.append((media_type, url))
+    return list(dict.fromkeys(items))

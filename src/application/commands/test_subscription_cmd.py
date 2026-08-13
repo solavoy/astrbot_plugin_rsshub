@@ -25,6 +25,11 @@ from ...domain.entities.content_types import (
 from ...domain.repositories.feed_repository import FeedRepository
 from ...domain.repositories.subscription_repository import SubscriptionRepository
 from ..dto.feed_dto import FeedDTO
+from ...infrastructure.pipeline import (
+    format_dispatch_content,
+    media_items_from_parsed,
+    remove_media_placeholders,
+)
 from ..dto.result_dto import CommandResult
 from ..dto.subscription_dto import SubscriptionDTO
 from ..ports import FeedFetcher, FeedParser
@@ -245,9 +250,7 @@ class TestSubscriptionCommand:
             parsed = await HTMLParser(raw_content, feed_link=feed_url).parse()
             plain_summary = parsed.html_tree.get_plain().strip()
             if any(isinstance(m, (AudioContent, VideoContent)) for m in parsed.media):
-                plain_summary = FeedPollingService._remove_media_placeholders(
-                    plain_summary
-                )
+                plain_summary = remove_media_placeholders(plain_summary)
             entry_link = getattr(entry, "link", "") or feed_url
             feed_meta = self._feed_meta(read_result.web_feed)
             effective_feed_title = (
@@ -261,9 +264,9 @@ class TestSubscriptionCommand:
                 if getattr(enclosure, "url", "")
             )
             media_urls = list(dict.fromkeys(media_urls))
-            media_items = FeedPollingService._media_items_from_parsed(parsed.media)
+            media_items = media_items_from_parsed(parsed.media)
             tags = tuple(getattr(entry, "tags", []) or ())
-            content = await FeedPollingService._format_dispatch_content_async(
+            content = await format_dispatch_content(
                 title=title,
                 body=plain_summary,
                 link=entry_link,

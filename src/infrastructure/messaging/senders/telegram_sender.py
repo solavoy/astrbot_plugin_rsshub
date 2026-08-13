@@ -1,7 +1,7 @@
 """Telegram 消息发送器
 
 针对 Telegram 平台的特定优化。
-组件排序由 MessageFormatter 统一处理，此处只负责发送。
+组件排序由 MessageChainFormatter 统一处理，此处只负责发送。
 """
 
 from __future__ import annotations
@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from ...config import get_config_manager
-from ...pipeline import MessageFormatter
+from ...pipeline import MessageChainFormatter
 from ...utils import get_logger
 from .base_sender import DefaultMessageSender
 from .telegraph_client import TelegraphClient
@@ -27,7 +27,7 @@ class TelegramMessageSender(DefaultMessageSender):
 
     特性：
     - 媒体优先展示（caption = text）
-    - 组件排序由 MessageFormatter 统一（platform="telegram"）
+    - 组件排序由 MessageChainFormatter 统一（platform="telegram"）
     """
 
     @staticmethod
@@ -173,7 +173,7 @@ class TelegramMessageSender(DefaultMessageSender):
         if not enabled or not token:
             return False, "", ""
 
-        unique_urls = MessageFormatter.collect_original_urls(prepared_media)
+        unique_urls = MessageChainFormatter.collect_original_urls(prepared_media)
         return len(unique_urls) > 1, token, proxy
 
     @staticmethod
@@ -200,7 +200,7 @@ class TelegramMessageSender(DefaultMessageSender):
         token: str,
         proxy: str = "",
     ) -> SendResult:
-        media_urls = MessageFormatter.collect_original_urls(prepared_media)
+        media_urls = MessageChainFormatter.collect_original_urls(prepared_media)
         client = TelegraphClient(
             access_token=token,
             timeout_seconds=self._get_timeout_seconds(),
@@ -224,14 +224,11 @@ class TelegramMessageSender(DefaultMessageSender):
             page_url,
             context=context,
         )
+        from astrbot.api.message_components import Plain
+
         return await self._send_chain(
             session_id,
-            self._formatter.build_chain(
-                prepared_media=None,
-                text=message,
-                failed_urls=[],
-                platform="telegram",
-            ),
+            [Plain(message)],
             use_markdown=self._context_render_markdown(context),
         )
 
@@ -254,7 +251,7 @@ class TelegramMessageSender(DefaultMessageSender):
     ) -> SendResult:
         """发送消息到 Telegram 用户
 
-        平台标记为 telegram，由 MessageFormatter 选择 Telegram 专属链式顺序。
+        平台标记为 telegram，由 MessageChainFormatter 选择 Telegram 专属链式顺序。
         """
         effective_prepared = None
         cleanup_owned = request.prepared_media is None
@@ -302,13 +299,15 @@ class TelegramMessageSender(DefaultMessageSender):
                         err,
                     )
 
-            chain = self._formatter.build_chain(
-                prepared_media=effective_prepared,
-                text=self._message_with_unavailable_generated_fallbacks(
-                    request,
-                    effective_prepared,
-                ),
+            components = self._build_components(
+                request,
+                effective_prepared,
+                context,
                 failed_urls=failed_urls,
+                platform="telegram",
+            )
+            chain = self._formatter.build_chain_from_components(
+                components,
                 platform="telegram",
             )
 

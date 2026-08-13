@@ -1,4 +1,12 @@
 // Dashboard store 的纯数据转换与表单工厂，避免页面模块重复维护同一套边界。
+export function toKeywordList(value) {
+  if (!value) return [];
+  return String(value)
+    .split(/[,，\n]+/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
 export function normalizeUserState(state) {
   return Number(state) < 0 ? -1 : 1;
 }

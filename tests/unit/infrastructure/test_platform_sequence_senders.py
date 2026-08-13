@@ -501,7 +501,7 @@ async def test_qq_official_ignores_layout_and_sends_message(monkeypatch):
                 LayoutFragment(kind="text", text="caption 2"),
             ],
         ),
-        context=MessageContext(platform_name="qq_official", style=2),
+        context=MessageContext(platform_name="qq_official"),
     )
 
     assert result.ok is True
@@ -547,7 +547,7 @@ async def test_qq_official_single_video_failure_tries_file_then_link(monkeypatch
                 LayoutFragment(kind="text", text="caption"),
             ],
         ),
-        context=MessageContext(platform_name="qq_official", style=2),
+        context=MessageContext(platform_name="qq_official"),
     )
 
     assert result.ok is True
@@ -592,7 +592,7 @@ async def test_qq_official_original_style_file_fragment_uses_file_component(
                 LayoutFragment(kind="text", text="after file"),
             ],
         ),
-        context=MessageContext(platform_name="qq_official", style=2),
+        context=MessageContext(platform_name="qq_official"),
     )
 
     assert result.ok is True
@@ -824,7 +824,7 @@ async def test_qq_official_original_style_multimedia_threshold_still_degrades(
                 LayoutFragment(kind="text", text="caption 2"),
             ],
         ),
-        context=MessageContext(platform_name="qq_official", style=2),
+        context=MessageContext(platform_name="qq_official"),
     )
 
     assert result.ok is True
@@ -938,7 +938,7 @@ async def test_weixin_oc_ignores_layout_and_sends_message(monkeypatch):
                 LayoutFragment(kind="text", text="caption"),
             ],
         ),
-        context=MessageContext(platform_name="weixin_oc", style=2),
+        context=MessageContext(platform_name="weixin_oc"),
     )
 
     assert result.ok is True
@@ -1370,7 +1370,7 @@ async def test_qq_official_original_style_gif_from_layout_matches_prepared(monke
                 LayoutFragment(kind="text", text="caption"),
             ],
         ),
-        context=MessageContext(platform_name="qq_official", style=2),
+        context=MessageContext(platform_name="qq_official"),
     )
 
     assert result.ok is True
@@ -1418,7 +1418,7 @@ async def test_qq_official_original_style_gif_from_downloaded_media(monkeypatch)
                 LayoutFragment(kind="text", text="caption"),
             ],
         ),
-        context=MessageContext(platform_name="qq_official", style=2),
+        context=MessageContext(platform_name="qq_official"),
     )
 
     assert result.ok is True

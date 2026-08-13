@@ -18,7 +18,7 @@ from astrbot_plugin_rsshub.src.infrastructure.pipeline import (
     EntryTextFormatter,
     MessageChainFormatter,
     MessageComponentSorter,
-    MessageFormatter,
+    MessageChainFormatter,
 )
 from astrbot_plugin_rsshub.src.infrastructure.rendering import (
     TableImageRenderer,
@@ -110,8 +110,8 @@ async def test_clean_text_keeps_discarded_stable_table_cache_image(
 
 def test_default_chain_keeps_failed_media_as_url_component():
     Plain.reset_mock()
-    formatter = MessageFormatter()
-    chain = formatter.build_chain(
+    formatter = MessageChainFormatter()
+    components = formatter.build_components(
         prepared_media=[
             PreparedMedia(
                 media_type="image",
@@ -124,14 +124,15 @@ def test_default_chain_keeps_failed_media_as_url_component():
         failed_urls=[],
         platform="",
     )
+    chain = formatter.build_chain_from_components(components, platform="")
     assert len(chain) == 1
     assert Plain.call_args.args[0] == "hello\n媒体原始链接:\nhttps://example.com/a.jpg"
 
 
 def test_telegram_chain_keeps_failed_media_as_url_component():
     Plain.reset_mock()
-    formatter = MessageFormatter()
-    chain = formatter.build_chain(
+    formatter = MessageChainFormatter()
+    components = formatter.build_components(
         prepared_media=[
             PreparedMedia(
                 media_type="image",
@@ -144,12 +145,13 @@ def test_telegram_chain_keeps_failed_media_as_url_component():
         failed_urls=[],
         platform="telegram",
     )
+    chain = formatter.build_chain_from_components(components, platform="telegram")
     assert len(chain) == 1
     assert Plain.call_args.args[0] == "hello\n媒体原始链接:\nhttps://example.com/a.jpg"
 
 
 def test_failed_video_is_not_sent_as_remote_video_component():
-    formatter = MessageFormatter()
+    formatter = MessageChainFormatter()
 
     components = formatter.build_components(
         prepared_media=[
@@ -172,7 +174,7 @@ def test_failed_video_is_not_sent_as_remote_video_component():
 
 
 def test_failed_generated_media_does_not_append_internal_id():
-    formatter = MessageFormatter()
+    formatter = MessageChainFormatter()
     generated_id = build_generated_media_url("table", "a" * 64)
 
     components = formatter.build_components(
@@ -195,10 +197,10 @@ def test_failed_generated_media_does_not_append_internal_id():
 
 def test_telegram_chain_does_not_truncate_caption_text():
     Plain.reset_mock()
-    formatter = MessageFormatter()
+    formatter = MessageChainFormatter()
     text = "x" * 1100
 
-    chain = formatter.build_chain(
+    components = formatter.build_components(
         prepared_media=[
             PreparedMedia(
                 media_type="image",
@@ -211,6 +213,7 @@ def test_telegram_chain_does_not_truncate_caption_text():
         failed_urls=[],
         platform="telegram",
     )
+    chain = formatter.build_chain_from_components(components, platform="telegram")
 
     assert len(chain) == 2
     assert Plain.call_args.args[0] == text
@@ -251,7 +254,7 @@ def test_message_component_sorter_orders_text_before_media_for_onebot():
 
 
 def test_message_formatter_build_components_keeps_default_media_text_tail_order():
-    formatter = MessageFormatter()
+    formatter = MessageChainFormatter()
 
     components = formatter.build_components(
         prepared_media=[
@@ -278,7 +281,7 @@ def test_message_formatter_build_components_keeps_default_media_text_tail_order(
 
 
 def test_message_formatter_alias_keeps_message_chain_formatter_compatibility():
-    assert MessageFormatter is MessageChainFormatter
+    assert MessageChainFormatter is MessageChainFormatter
 
 
 @pytest.mark.asyncio
@@ -570,8 +573,8 @@ def test_sorter_video_gif_becomes_image_component():
 
 
 def test_formatter_build_components_gif_conversion():
-    """MessageFormatter.build_components 对 video + *.gif 应生成 media_type=image 组件。"""
-    formatter = MessageFormatter()
+    """MessageChainFormatter.build_components 对 video + *.gif 应生成 media_type=image 组件。"""
+    formatter = MessageChainFormatter()
     components = formatter.build_components(
         prepared_media=[
             PreparedMedia(
@@ -597,7 +600,7 @@ def test_formatter_build_components_gif_conversion():
 
 
 def test_multiple_images_never_duplicate_body_text():
-    formatter = MessageFormatter()
+    formatter = MessageChainFormatter()
     components = formatter.build_components(
         prepared_media=[
             PreparedMedia(

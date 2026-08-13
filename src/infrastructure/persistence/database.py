@@ -23,12 +23,7 @@ from sqlalchemy.orm import registry
 from sqlmodel import SQLModel
 
 from ..utils import get_logger
-from .migrations import (
-    cleanup_legacy_translation_tables,
-    ensure_push_history_schema,
-    ensure_user_rows,
-    run_migrations,
-)
+from .migrations import run_migrations
 
 logger = get_logger()
 
@@ -87,13 +82,10 @@ class DatabaseManager:
             expire_on_commit=False,
         )
 
-        # 创建表（如果不存在）并运行迁移
+        # 创建表（如果不存在）并运行迁移（V1 baseline 幂等建表）
         async with self._engine.begin() as conn:
             await conn.run_sync(RSSHubBaseModel.metadata.create_all)
             await run_migrations(conn)
-            await cleanup_legacy_translation_tables(conn)
-            await ensure_push_history_schema(conn)
-            await ensure_user_rows(conn)
 
         logger.info("RSS 数据库初始化完成: %s", db_path)
 

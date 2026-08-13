@@ -529,22 +529,6 @@ async def test_poll_feed_dispatch_parses_html_summary_and_media():
 
 
 @pytest.mark.asyncio
-async def test_format_dispatch_content_omits_broken_via_when_all_tail_fields_missing():
-    content = FeedPollingService._format_dispatch_content(
-        title="",
-        body="Body only",
-        link="",
-        feed_title="",
-        feed_link="",
-        author="",
-    )
-
-    assert content == "Body only"
-    assert "via" not in content
-    assert "|" not in content
-
-
-@pytest.mark.asyncio
 async def test_poll_feed_dispatch_decodes_entity_escaped_html_summary():
     feed = Feed(id=1, link="https://example.com/rss.xml", title="Timeline")
     entry = EntryParsed(

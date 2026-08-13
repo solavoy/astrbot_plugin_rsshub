@@ -12,6 +12,8 @@ from ...infrastructure.pipeline import (
     EffectivePushOptions,
     EntryFormatInput,
     EntryTextFormatter,
+    media_items_from_parsed,
+    remove_media_placeholders,
 )
 from ...infrastructure.rendering import cleanup_ephemeral_generated_media_paths
 from ...infrastructure.utils import get_logger
@@ -27,7 +29,6 @@ from ...shared.constants import (
     SEND_MODE_DIRECT,
     SEND_MODE_LINK_ONLY,
 )
-from .feed_polling_service import FeedPollingService
 from .html_parser import HTMLParser
 from .notification_dispatcher import (
     SendTarget,
@@ -68,7 +69,6 @@ class AgentXmlPushOptions:
     """Per-call formatting overrides for agent XML pushes."""
 
     send_mode: int = SEND_MODE_AUTO
-    style: int = 0
     format_options: EffectivePushOptions = EffectivePushOptions()
 
 
@@ -175,7 +175,6 @@ def _build_link_only_content(*, title: str, link: str) -> str:
 def _resolve_push_options(
     *,
     send_mode: Any = None,
-    style: Any = None,
     display_media: Any = None,
     display_title: Any = None,
     display_author: Any = None,
@@ -183,9 +182,6 @@ def _resolve_push_options(
     display_entry_tags: Any = None,
     length_limit: Any = None,
 ) -> AgentXmlPushOptions:
-    # 排版策略已移除：旧调用传入 style 时明确拒绝，不静默改变语义。
-    if style not in (None, "", "auto", "classic"):
-        raise AgentXmlValidationError("style 参数已移除，请移除该参数后重试")
     send_mode_value = _parse_mapped_int(
         send_mode,
         mapping={
@@ -248,7 +244,6 @@ def _resolve_push_options(
     length_limit_value = max(0, _coerce_int(length_limit, fallback=0))
     return AgentXmlPushOptions(
         send_mode=send_mode_value,
-        style=0,
         format_options=EffectivePushOptions(
             length_limit=length_limit_value,
             display_author=_parse_mapped_int(
@@ -307,7 +302,6 @@ class AgentXmlPushService:
         entry_guid: str = "",
         idempotency_key: str = "",
         dry_run: bool = False,
-        style: Any = None,
         send_mode: Any = None,
         display_media: Any = None,
         display_title: Any = None,
@@ -331,7 +325,6 @@ class AgentXmlPushService:
         valid_xml = _validate_xml_input(xml)
         root, body_xml = _parse_xml_root(valid_xml)
         options = _resolve_push_options(
-            style=style,
             send_mode=send_mode,
             display_media=display_media,
             display_title=display_title,
@@ -343,7 +336,7 @@ class AgentXmlPushService:
         parsed = None
         try:
             parsed = await HTMLParser(body_xml, feed_link=link or "").parse()
-            plain_body = FeedPollingService._remove_media_placeholders(
+            plain_body = remove_media_placeholders(
                 parsed.html_tree.get_plain().strip()
             )
             content = await _entry_text_formatter.format_entry(
@@ -359,7 +352,7 @@ class AgentXmlPushService:
                 ),
                 options.format_options,
             )
-            media_items = FeedPollingService._media_items_from_parsed(parsed.media)
+            media_items = media_items_from_parsed(parsed.media)
             media_urls = [
                 url
                 for _media_type, url in normalize_media_items(media_items=media_items)
@@ -445,7 +438,6 @@ class AgentXmlPushService:
                 layout=dispatch_layout,
                 entry_guid=preview.entry_guid,
                 send_mode=options.send_mode,
-                style=options.style,
             )
             result["dry_run"] = False
             result["preview"] = {

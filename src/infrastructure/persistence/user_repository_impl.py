@@ -61,7 +61,6 @@ class UserRepositoryImpl:
                 orm.display_entry_tags = updated_orm.display_entry_tags
                 orm.display_media = updated_orm.display_media
                 orm.default_target_session = updated_orm.default_target_session
-                orm.needs_binding_notice = updated_orm.needs_binding_notice
                 orm.created_at = updated_orm.created_at
                 orm.updated_at = updated_orm.updated_at
             await session.commit()
@@ -119,7 +118,6 @@ class UserRepositoryImpl:
             display_entry_tags=orm.display_entry_tags,
             display_media=orm.display_media,
             default_target_session=orm.default_target_session,
-            needs_binding_notice=orm.needs_binding_notice,
             created_at=orm.created_at,
             updated_at=orm.updated_at,
         )
@@ -140,7 +138,6 @@ class UserRepositoryImpl:
             display_entry_tags=user.display_entry_tags,
             display_media=user.display_media,
             default_target_session=user.default_target_session,
-            needs_binding_notice=user.needs_binding_notice,
             created_at=user.created_at,
             updated_at=user.updated_at,
         )

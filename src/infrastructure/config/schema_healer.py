@@ -5,7 +5,9 @@ from __future__ import annotations
 from copy import deepcopy
 from typing import Any
 
-from .legacy_migration import record_config_heal
+def _record_config_heal(changes: list[str], path: str, reason: str) -> None:
+    changes.append(f"{path}: {reason}")
+
 
 _SCHEMA_DEFAULTS: dict[str, Any] = {
     "bool": False,
@@ -72,10 +74,10 @@ def _clamp_slider_value(
     minimum = slider.get("min")
     maximum = slider.get("max")
     if isinstance(minimum, (int, float)) and value < minimum:
-        record_config_heal(changes, path, "clamped to slider minimum")
+        _record_config_heal(changes, path, "clamped to slider minimum")
         return minimum
     if isinstance(maximum, (int, float)) and value > maximum:
-        record_config_heal(changes, path, "clamped to slider maximum")
+        _record_config_heal(changes, path, "clamped to slider maximum")
         return maximum
     return value
 
@@ -87,7 +89,7 @@ def _normalize_list_value(
     changes: list[str],
 ) -> list[Any]:
     if not isinstance(value, list):
-        record_config_heal(changes, path, "reset invalid list")
+        _record_config_heal(changes, path, "reset invalid list")
         return _schema_default(meta)
 
     options = meta.get("options")
@@ -129,7 +131,7 @@ def _normalize_list_value(
         normalized.append(normalized_item)
 
     if item_changed or len(normalized) != len(value):
-        record_config_heal(changes, path, "removed invalid list items")
+        _record_config_heal(changes, path, "removed invalid list items")
     return normalized
 
 
@@ -140,7 +142,7 @@ def _normalize_template_list_value(
     changes: list[str],
 ) -> list[dict[str, Any]]:
     if not isinstance(value, list):
-        record_config_heal(changes, path, "reset invalid template_list")
+        _record_config_heal(changes, path, "reset invalid template_list")
         return _schema_default(meta)
 
     templates = meta.get("templates")
@@ -151,12 +153,12 @@ def _normalize_template_list_value(
     for index, item in enumerate(value):
         item_path = f"{path}[{index}]"
         if not isinstance(item, dict):
-            record_config_heal(changes, item_path, "removed invalid template item")
+            _record_config_heal(changes, item_path, "removed invalid template item")
             continue
         template_key = item.get("__template_key")
         template_meta = templates.get(template_key)
         if not isinstance(template_key, str) or not isinstance(template_meta, dict):
-            record_config_heal(changes, item_path, "removed unknown template item")
+            _record_config_heal(changes, item_path, "removed unknown template item")
             continue
         template_items = template_meta.get("items")
         if not isinstance(template_items, dict):
@@ -175,10 +177,10 @@ def _normalize_template_list_value(
                 )
             else:
                 normalized_item[key] = _schema_default(child_meta)
-                record_config_heal(changes, child_path, "added missing default")
+                _record_config_heal(changes, child_path, "added missing default")
         for key in item:
             if key != "__template_key" and key not in template_items:
-                record_config_heal(changes, f"{item_path}.{key}", "removed unknown key")
+                _record_config_heal(changes, f"{item_path}.{key}", "removed unknown key")
         normalized.append(normalized_item)
     return normalized
 
@@ -192,12 +194,12 @@ def _normalize_schema_value(
     meta_type = meta.get("type")
 
     if value is None:
-        record_config_heal(changes, path, "reset null value")
+        _record_config_heal(changes, path, "reset null value")
         return _schema_default(meta)
 
     if meta_type == "object":
         if not isinstance(value, dict):
-            record_config_heal(changes, path, "reset invalid object")
+            _record_config_heal(changes, path, "reset invalid object")
             return _schema_default(meta)
         items = meta.get("items")
         if not isinstance(items, dict):
@@ -214,11 +216,11 @@ def _normalize_schema_value(
                 )
             else:
                 normalized[key] = _schema_default(child_meta)
-                record_config_heal(changes, child_path, "added missing default")
+                _record_config_heal(changes, child_path, "added missing default")
         for key in value:
             if key not in items:
                 extra_path = f"{path}.{key}" if path else key
-                record_config_heal(changes, extra_path, "removed unknown key")
+                _record_config_heal(changes, extra_path, "removed unknown key")
         return normalized
 
     if meta_type == "template_list":
@@ -230,34 +232,34 @@ def _normalize_schema_value(
     if meta_type == "int":
         coerced = _coerce_int(value)
         if coerced is None:
-            record_config_heal(changes, path, "reset invalid int")
+            _record_config_heal(changes, path, "reset invalid int")
             return _schema_default(meta)
         if coerced != value:
-            record_config_heal(changes, path, "coerced int")
+            _record_config_heal(changes, path, "coerced int")
         return _clamp_slider_value(coerced, meta, path, changes)
 
     if meta_type == "float":
         coerced = _coerce_float(value)
         if coerced is None:
-            record_config_heal(changes, path, "reset invalid float")
+            _record_config_heal(changes, path, "reset invalid float")
             return _schema_default(meta)
         if coerced != value:
-            record_config_heal(changes, path, "coerced float")
+            _record_config_heal(changes, path, "coerced float")
         return _clamp_slider_value(coerced, meta, path, changes)
 
     if meta_type == "bool":
         if not isinstance(value, bool):
-            record_config_heal(changes, path, "reset invalid bool")
+            _record_config_heal(changes, path, "reset invalid bool")
             return _schema_default(meta)
         return value
 
     if meta_type in {"string", "text"}:
         if not isinstance(value, str):
-            record_config_heal(changes, path, "reset invalid string")
+            _record_config_heal(changes, path, "reset invalid string")
             return _schema_default(meta)
         options = meta.get("options")
         if isinstance(options, list) and value not in options:
-            record_config_heal(changes, path, "reset invalid option")
+            _record_config_heal(changes, path, "reset invalid option")
             return _schema_default(meta)
         return value
 

@@ -52,8 +52,6 @@ class User(BaseModel):
     default_target_session: str | None = Field(
         default=None, max_length=255, description="默认推送目标会话(unified_msg_origin)"
     )
-    needs_binding_notice: int = Field(default=0, description="是否需要提示绑定推送目标")
-
     created_at: datetime = Field(
         default_factory=lambda: datetime.now(timezone.utc), description="创建时间"
     )
@@ -84,23 +82,8 @@ class User(BaseModel):
     def set_default_target(self, target_session: str) -> "User":
         """设置默认推送目标会话"""
         self.default_target_session = target_session
-        self.needs_binding_notice = 0
         self.updated_at = datetime.now(timezone.utc)
         return self
-
-    def mark_binding_notice(self) -> "User":
-        """标记需要绑定通知"""
-        self.needs_binding_notice = 1
-        self.updated_at = datetime.now(timezone.utc)
-        return self
-
-    def consume_binding_notice(self) -> bool:
-        """消费绑定通知标记"""
-        if self.needs_binding_notice == 0:
-            return False
-        self.needs_binding_notice = 0
-        self.updated_at = datetime.now(timezone.utc)
-        return True
 
     def get_effective_option(self, key: str) -> int | str | None:
         """

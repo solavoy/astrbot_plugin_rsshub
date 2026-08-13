@@ -323,120 +323,9 @@ def test_rss_parser_basic():
 # =============================================================================
 
 
-async def test_event_bus():
-    """测试事件总线."""
-    from astrbot_plugin_rsshub.src.infrastructure.fetcher.rss.parser import EntryParsed
-    from astrbot_plugin_rsshub.src.infrastructure.messaging import (
-        EventBus,
-        FeedParseEvent,
-    )
-
-    passed = 0
-    failed = 0
-
-    # 测试基本事件发布/订阅
-    try:
-        bus = EventBus()
-        received = []
-
-        @bus.on(FeedParseEvent)
-        async def handler(event):
-            received.append(event)
-
-        event = FeedParseEvent(entries=[EntryParsed(title="Test")])
-        await bus.emit(event)
-
-        assert len(received) == 1, f"期望收到 1 个事件, 实际 {len(received)}"
-        print_test("事件发布/订阅", "PASS")
-        passed += 1
-    except Exception as e:
-        print_test("事件发布/订阅", "FAIL", str(e))
-        failed += 1
-
-    # 测试事件取消
-    try:
-        bus = EventBus()
-        handler2_called = False
-
-        @bus.on(FeedParseEvent)
-        async def handler1(event):
-            event.cancel()
-
-        @bus.on(FeedParseEvent)
-        async def handler2(event):
-            nonlocal handler2_called
-            handler2_called = True
-
-        event = FeedParseEvent(entries=[])
-        await bus.emit(event)
-
-        assert not handler2_called, "取消后 handler2 不应该被调用"
-        print_test("事件取消", "PASS")
-        passed += 1
-    except Exception as e:
-        print_test("事件取消", "FAIL", str(e))
-        failed += 1
-
-    return passed, failed
-
-
 # =============================================================================
 # 全局事件总线测试
 # =============================================================================
-
-
-async def test_global_event_bus():
-    """测试全局事件总线生命周期."""
-    from astrbot_plugin_rsshub.src.infrastructure.fetcher.rss.parser import EntryParsed
-    from astrbot_plugin_rsshub.src.infrastructure.messaging import (
-        FeedParseEvent,
-        get_event_bus,
-        reset_event_bus,
-    )
-
-    passed = 0
-    failed = 0
-    received: list[object] = []
-
-    # 测试全局事件总线注册与发布
-    try:
-        reset_event_bus()
-        bus = get_event_bus()
-
-        @bus.on(FeedParseEvent)
-        async def handler(event):
-            received.append(event)
-
-        event = FeedParseEvent(entries=[EntryParsed(title="Global")])
-        await bus.emit(event)
-
-        assert len(received) == 1, f"期望收到 1 个事件, 实际 {len(received)}"
-        print_test("全局事件总线注册/发布", "PASS")
-        passed += 1
-    except Exception as e:
-        print_test("全局事件总线注册/发布", "FAIL", str(e))
-        failed += 1
-
-    # 测试 reset 后旧 handler 不再影响新总线
-    try:
-        old_bus = get_event_bus()
-        old_received_count = len(received)
-        reset_event_bus()
-        new_bus = get_event_bus()
-
-        assert new_bus is not old_bus, "reset 后应该创建新的事件总线实例"
-
-        await new_bus.emit(FeedParseEvent(entries=[]))
-        assert len(received) == old_received_count, "旧 handler 不应该挂到新的事件总线"
-        print_test("全局事件总线 reset 隔离", "PASS")
-        passed += 1
-    except Exception as e:
-        print_test("全局事件总线 reset 隔离", "FAIL", str(e))
-        failed += 1
-    finally:
-        reset_event_bus()
-
-    return passed, failed
 
 
 # =============================================================================
@@ -452,10 +341,7 @@ TEST_CATEGORIES = {
         ("锁管理器", test_lock_manager),
         ("RSS 解析器", test_rss_parser_basic),
     ],
-    "integration": [
-        ("事件总线", test_event_bus),
-        ("全局事件总线", test_global_event_bus),
-    ],
+    "integration": [],
 }
 
 

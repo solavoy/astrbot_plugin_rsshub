@@ -986,7 +986,6 @@ async def test_dispatch_ignores_layout_and_formats_markdown_with_length_limit():
         platform_name="telegram",
         target_session="telegram:Group:1",
         length_limit=8,
-        style=2,
     )
     sub_repo = AsyncMock()
     sub_repo.get_active_by_feed_id.return_value = [sub]
@@ -1057,7 +1056,6 @@ async def test_dispatch_keeps_original_layout_text_when_length_limit_disabled():
         platform_name="telegram",
         target_session="telegram:Group:1",
         length_limit=0,
-        style=2,
     )
     sub_repo = AsyncMock()
     sub_repo.get_active_by_feed_id.return_value = [sub]
@@ -1105,7 +1103,6 @@ async def test_dispatch_clears_original_layout_when_media_hidden():
         platform_name="telegram",
         target_session="telegram:Group:1",
         display_media=-1,
-        style=2,
     )
     sub_repo = AsyncMock()
     sub_repo.get_active_by_feed_id.return_value = [sub]
@@ -1160,7 +1157,6 @@ async def test_dispatch_link_only_clears_original_layout():
         platform_name="telegram",
         target_session="telegram:Group:1",
         send_mode=-1,
-        style=2,
     )
     sub_repo = AsyncMock()
     sub_repo.get_active_by_feed_id.return_value = [sub]

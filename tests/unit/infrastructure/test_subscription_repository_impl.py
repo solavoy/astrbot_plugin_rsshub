@@ -59,7 +59,6 @@ async def test_update_options_applies_generic_fields(monkeypatch):
         display_via=-100,
         display_title=-100,
         display_entry_tags=-100,
-        style=-100,
         display_media=-100,
         created_at=datetime.now(timezone.utc),
         updated_at=datetime.now(timezone.utc),

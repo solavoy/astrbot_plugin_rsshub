@@ -35,7 +35,7 @@ from ...infrastructure.pipeline import (
     EffectivePushOptions,
     EntryFormatInput,
     EntryTextFormatter,
-    MessageFormatter,
+    MessageChainFormatter,
 )
 from ...infrastructure.rendering import cleanup_ephemeral_generated_media_paths
 from ...infrastructure.utils import get_logger
@@ -49,7 +49,7 @@ from ..ports import MessageContext, MessageSenderProvider, SendRequest
 from .session_push_queue import PushJob, SessionPushQueue
 
 logger = get_logger()
-_message_formatter = MessageFormatter()
+_message_formatter = MessageChainFormatter()
 _entry_text_formatter = EntryTextFormatter()
 
 # 不可恢复错误关键词（匹配时不计入重试，直接标记为 failed）
@@ -273,6 +273,52 @@ class NotificationDispatcher:
         )
         self._basic_settings = basic_settings or BasicSettings()
         self._list_queue_service = list_queue_service
+
+    async def _record_send_outcome(
+        self,
+        history: PushHistory,
+        result: dict[str, Any],
+        *,
+        media_urls: list[str] | None = None,
+        media_items: list[tuple[str, str]] | None = None,
+        retry_failure: bool = False,
+        on_error: Any = None,
+    ) -> str:
+        """记录一次发送结果并更新 history，返回状态标签。
+
+        标签：success（含人工停止）、pending（首败可重试）、failed（终败）。
+        retry_failure=True 表示失败重试路径（record_retry_failure 递增计数）。
+        """
+        if result.get("ok"):
+            history.mark_success()
+            return "success"
+        if result.get("cancelled"):
+            history.mark_stopped(
+                result.get("error", "Stopped by System or Command")
+            )
+            history.max_retries = 0
+            return "success"
+        error_msg = result.get("error", "")
+        if on_error is not None:
+            on_error(error_msg)
+        history.content = append_media_links_to_text(
+            history.content,
+            media_urls=media_urls,
+            media_items=media_items,
+        )
+        if retry_failure:
+            if is_unrecoverable_error(error_msg):
+                history.record_first_failure(error_msg)
+                history.max_retries = 0
+                logger.warning(
+                    "订阅 %s 推送失败（不可恢复）: %s", history.sub_id, error_msg
+                )
+            else:
+                history.record_retry_failure(error_msg)
+            return "failed"
+        history.max_retries = await self._resolve_initial_failure_max_retries()
+        history.record_first_failure(error_msg)
+        return "pending" if history.can_retry() else "failed"
 
     @staticmethod
     def _target_from_subscription(subscription) -> SendTarget:
@@ -941,31 +987,14 @@ class NotificationDispatcher:
                     )
 
                     # 5. 更新推送状态
-                    if result["ok"]:
-                        history.mark_success()
-                        stats["success"] += 1
-                    elif result.get("cancelled"):
-                        history.mark_stopped(
-                            result.get("error", "Stopped by System or Command")
-                        )
-                        history.max_retries = 0
-                        stats["success"] += 1
-                    else:
-                        record_error_detail(result.get("error"))
-                        history.max_retries = (
-                            await self._resolve_initial_failure_max_retries()
-                        )
-                        # 首次失败不增加重试计数
-                        history.record_first_failure(result.get("error"))
-                        history.content = append_media_links_to_text(
-                            history.content,
-                            media_urls=prepared.persisted_media_urls,
-                            media_items=prepared.effective_media_items,
-                        )
-                        if history.can_retry():
-                            stats["pending"] += 1
-                        else:
-                            stats["failed"] += 1
+                    outcome = await self._record_send_outcome(
+                        history,
+                        result,
+                        media_urls=prepared.persisted_media_urls,
+                        media_items=prepared.effective_media_items,
+                        on_error=record_error_detail,
+                    )
+                    stats[outcome] += 1
 
                     await self._push_history_repo.save(history)
 
@@ -1014,7 +1043,6 @@ class NotificationDispatcher:
         entry_guid: str,
         layout: list[LayoutFragment] | None = None,
         send_mode: int | None = SEND_MODE_AUTO,
-        style: int = 0,
     ) -> dict[str, Any]:
         """Dispatch one agent-originated push while preserving history and retries."""
         try:
@@ -1084,27 +1112,15 @@ class NotificationDispatcher:
                 feed_id=None,
                 sub_id=None,
                 send_mode=send_mode,
-                style=style,
             )
 
             stats = {"success": 0, "failed": 0, "pending": 0}
-            if result["ok"]:
-                history.mark_success()
-                stats["success"] = 1
-            elif result.get("cancelled"):
-                history.mark_stopped(
-                    result.get("error", "Stopped by System or Command")
-                )
-                history.max_retries = 0
-                stats["success"] = 1
-            else:
-                history.max_retries = await self._resolve_initial_failure_max_retries()
-                history.record_first_failure(result.get("error"))
-                history.content = append_media_links_to_text(
-                    history.content,
-                    media_items=normalized_media,
-                )
-                stats["pending" if history.can_retry() else "failed"] = 1
+            outcome = await self._record_send_outcome(
+                history,
+                result,
+                media_items=normalized_media,
+            )
+            stats[outcome] = 1
 
             await self._push_history_repo.save(history)
             return {
@@ -1132,7 +1148,6 @@ class NotificationDispatcher:
         feed_id: int | None = None,
         sub_id: int | None = None,
         send_mode: int | None = None,
-        style: int = 0,
         sender_strategy: Any = None,
     ) -> dict[str, Any]:
         return await self._send_to_session(
@@ -1149,7 +1164,6 @@ class NotificationDispatcher:
             feed_id=feed_id,
             sub_id=sub_id,
             send_mode=send_mode,
-            style=style,
             sender_strategy=sender_strategy,
         )
 
@@ -1169,7 +1183,6 @@ class NotificationDispatcher:
         feed_id: int | None = None,
         sub_id: int | None = None,
         send_mode: int | None = None,
-        style: int = 0,
         sender_strategy: Any = None,
     ) -> dict[str, Any]:
         """
@@ -1222,7 +1235,6 @@ class NotificationDispatcher:
                         entry_link=entry_link,
                         platform_name=target.platform_name or "",
                         send_mode=self._normalize_send_mode_value(send_mode),
-                        style=style,
                         sender_strategy=sender_strategy,
                         render_markdown=EntryTextFormatter.should_render_markdown(
                             target.platform_name
@@ -1426,43 +1438,19 @@ class NotificationDispatcher:
                     ),
                 )
 
-                error_msg = result.get("error", "")
-                if result["ok"]:
+                outcome = await self._record_send_outcome(
+                    history,
+                    result,
+                    media_urls=history.media_urls,
+                    retry_failure=True,
+                )
+                if outcome == "success":
+                    # 重试成功后清理首败追加的媒体链接，避免历史残留。
                     history.content = strip_appended_media_links_from_text(
                         history.content,
                         media_urls=history.media_urls,
                     )
-                    history.mark_success()
-                    stats["success"] += 1
-                elif result.get("cancelled"):
-                    history.mark_stopped(
-                        result.get("error", "Stopped by System or Command")
-                    )
-                    history.max_retries = 0
-                    stats["success"] += 1
-                elif is_unrecoverable_error(error_msg):
-                    # 不可恢复错误：直接标记为最终失败，不再重试
-                    history.record_first_failure(error_msg)
-                    history.content = append_media_links_to_text(
-                        history.content,
-                        media_urls=history.media_urls,
-                    )
-                    # 覆盖 max_retries 为 0，防止 can_retry 仍返回 True
-                    history.max_retries = 0
-                    stats["failed"] += 1
-                    logger.warning(
-                        "订阅 %s 推送失败（不可恢复）: %s",
-                        history.sub_id,
-                        error_msg,
-                    )
-                else:
-                    # 可恢复错误：记录重试失败，增加计数
-                    history.record_retry_failure(error_msg)
-                    history.content = append_media_links_to_text(
-                        history.content,
-                        media_urls=history.media_urls,
-                    )
-                    stats["failed"] += 1
+                stats[outcome] += 1
 
                 await self._push_history_repo.save(history)
 

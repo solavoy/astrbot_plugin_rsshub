@@ -25,7 +25,7 @@ from ....shared.constants import (
     QQ_OFFICIAL_PLATFORMS,
     TELEGRAM_PHOTO_MAX_BYTES,
 )
-from ...pipeline import EntryTextFormatter, MessageComponent, MessageFormatter
+from ...pipeline import MessageChainFormatter, MessageComponent
 from ...pipeline.markdown_plain import markdown_to_plain
 from ...utils import get_logger
 from ...utils.lock import locked
@@ -49,7 +49,7 @@ class DefaultMessageSender:
     """默认跨平台发送器策略
 
     提供基础的消息发送和媒体处理功能。
-    组件排序统一由 MessageFormatter 决定，此处只负责发送。
+    组件排序统一由 MessageChainFormatter 决定，此处只负责发送。
     """
 
     _timeout_seconds: int = 30
@@ -67,7 +67,7 @@ class DefaultMessageSender:
     _qq_official_media_threshold: int = QQ_OFFICIAL_MEDIA_THRESHOLD_DEFAULT
     _qq_official_degrade_strategy: str = QQ_OFFICIAL_DEGRADE_STRATEGY_DEFAULT
 
-    _formatter: MessageFormatter = MessageFormatter()
+    _formatter: MessageChainFormatter = MessageChainFormatter()
 
     @classmethod
     def configure_runtime(
@@ -466,51 +466,7 @@ class DefaultMessageSender:
                 media_url,
             )
             relay_kwargs = self._media_downloader_relay_kwargs()
-            if hasattr(downloader, "get_or_download_prepared"):
-                prepared_item = await downloader.get_or_download_prepared(
-                    url=media_url,
-                    timeout_seconds=timeout,
-                    proxy=proxy,
-                    media_type=effective_media_type,
-                    try_convert_gif=try_convert_gif,
-                    gif_transcode_timeout=self._get_gif_transcode_timeout(),
-                    gif_transcode_profile=self._get_gif_transcode_profile(),
-                    **relay_kwargs,
-                )
-                if (
-                    effective_media_type == "video"
-                    and prepared_item.media_type == "video"
-                    and prepared_item.local_path is not None
-                ):
-                    (
-                        local_path,
-                        transcode_owned,
-                    ) = await self._maybe_transcode_video_to_mp4(
-                        prepared_item.local_path
-                    )
-                    if local_path != prepared_item.local_path:
-                        detection = detect_media_file(local_path)
-                        prepared_item.local_path = local_path
-                        prepared_item.media_type = detection.media_type or "video"
-                        prepared_item.detected_mime = detection.mime
-                        prepared_item.detected_suffix = detection.suffix
-                        prepared_item.detection_source = detection.source
-                        if transcode_owned:
-                            prepared_item.mark_owned_path(local_path)
-                        prepared_item.add_variant(
-                            MediaVariant(
-                                variant="transcoded",
-                                media_type=prepared_item.media_type,
-                                path=local_path,
-                                mime=detection.mime,
-                                suffix=detection.suffix,
-                                size_bytes=self._safe_file_size(local_path),
-                            )
-                        )
-                prepared_item.ensure_primary_variant()
-                return prepared_item
-
-            local_path = await downloader.get_or_download(
+            prepared_item = await downloader.get_or_download_prepared(
                 url=media_url,
                 timeout_seconds=timeout,
                 proxy=proxy,
@@ -520,27 +476,36 @@ class DefaultMessageSender:
                 gif_transcode_profile=self._get_gif_transcode_profile(),
                 **relay_kwargs,
             )
-            transcode_owned = False
-            if effective_media_type == "video":
-                local_path, transcode_owned = await self._maybe_transcode_video_to_mp4(
-                    local_path
+            if (
+                effective_media_type == "video"
+                and prepared_item.media_type == "video"
+                and prepared_item.local_path is not None
+            ):
+                (
+                    local_path,
+                    transcode_owned,
+                ) = await self._maybe_transcode_video_to_mp4(
+                    prepared_item.local_path
                 )
-            detection = detect_media_file(local_path)
-            effective_media_type = (
-                detection.media_type
-                if detection.media_type in {"image", "video", "audio"}
-                else effective_media_type
-            )
-            prepared_item = PreparedMedia(
-                media_type=effective_media_type,
-                original_url=media_url,
-                local_path=local_path,
-                detected_mime=detection.mime,
-                detected_suffix=detection.suffix,
-                detection_source=detection.source,
-            )
-            if effective_media_type == "video" and transcode_owned:
-                prepared_item.mark_owned_path(local_path)
+                if local_path != prepared_item.local_path:
+                    detection = detect_media_file(local_path)
+                    prepared_item.local_path = local_path
+                    prepared_item.media_type = detection.media_type or "video"
+                    prepared_item.detected_mime = detection.mime
+                    prepared_item.detected_suffix = detection.suffix
+                    prepared_item.detection_source = detection.source
+                    if transcode_owned:
+                        prepared_item.mark_owned_path(local_path)
+                    prepared_item.add_variant(
+                        MediaVariant(
+                            variant="transcoded",
+                            media_type=prepared_item.media_type,
+                            path=local_path,
+                            mime=detection.mime,
+                            suffix=detection.suffix,
+                            size_bytes=self._safe_file_size(local_path),
+                        )
+                    )
             prepared_item.ensure_primary_variant()
             return prepared_item
         except Exception as ex:
@@ -818,7 +783,6 @@ class DefaultMessageSender:
         默认 sender）在发送边界还原 Markdown 语法，避免原文直接暴露。
         """
         from ...pipeline.entry_formatter import EntryTextFormatter
-        from ...pipeline.markdown_plain import markdown_to_plain
 
         if EntryTextFormatter.should_render_markdown(platform):
             return components
@@ -1350,7 +1314,7 @@ class DefaultMessageSender:
     ) -> SendResult:
         """发送消息给用户（默认实现）
 
-        组件排序由 MessageFormatter 统一处理。
+        组件排序由 MessageChainFormatter 统一处理。
         """
         effective_prepared: list[PreparedMedia] | None = None
         cleanup_owned = request.prepared_media is None
@@ -1364,17 +1328,16 @@ class DefaultMessageSender:
             if effective_prepared:
                 failed_urls = self._collect_failed_urls(effective_prepared)
 
-            text = self._message_with_unavailable_generated_fallbacks(
+            # 统一组件构造路径：_build_components 内完成文本降级与 generated fallback。
+            components = self._build_components(
                 request,
                 effective_prepared,
-            )
-            if not EntryTextFormatter.should_render_markdown(platform):
-                # 默认 sender 覆盖未专门适配的平台：非渲染平台降级为纯文本。
-                text = markdown_to_plain(text)
-            chain = self._formatter.build_chain(
-                prepared_media=effective_prepared,
-                text=text,
+                context,
                 failed_urls=failed_urls,
+                platform=platform,
+            )
+            chain = self._formatter.build_chain_from_components(
+                components,
                 platform=platform,
             )
 

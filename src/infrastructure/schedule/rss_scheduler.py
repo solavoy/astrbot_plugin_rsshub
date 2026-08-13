@@ -12,7 +12,7 @@ import asyncio
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-from typing import TYPE_CHECKING, Any, Protocol
+from typing import TYPE_CHECKING, Any
 
 from sqlmodel import or_, select
 
@@ -24,8 +24,6 @@ from ..utils.lock import locked
 if TYPE_CHECKING:
     from ...application.services.feed_polling_service import FeedPollingService
     from ...application.services.notification_dispatcher import NotificationDispatcher
-    from ...domain.entities.feed import Feed
-    from ...domain.entities.subscription import Subscription
 
 logger = get_logger()
 
@@ -58,28 +56,6 @@ async def _safe_db_session(reason: str):
             yield None
             return
         raise
-
-
-class NotificationService(Protocol):
-    """Legacy notification protocol kept for compatibility with old imports."""
-
-    async def notify_feed_update(
-        self,
-        feed: Feed,
-        subscriptions: list[Subscription],
-        entries: list[dict[str, Any]],
-    ) -> bool:
-        """Notify subscribers about feed updates."""
-        ...
-
-    async def notify_feed_error(
-        self,
-        feed: Feed,
-        subscriptions: list[Subscription],
-        error: str,
-    ) -> None:
-        """Notify subscribers about feed polling errors."""
-        ...
 
 
 @dataclass(frozen=True)
@@ -149,7 +125,6 @@ class RSSScheduler:
         *,
         feed_polling_service: FeedPollingService | None = None,
         notification_dispatcher: NotificationDispatcher | None = None,
-        notification_service: NotificationService | None = None,
         list_batch_coordinator: Any | None = None,
         default_interval: int = 10,
         history_retention_days: int = 30,
@@ -157,7 +132,6 @@ class RSSScheduler:
     ) -> None:
         self._feed_polling_service = feed_polling_service
         self._notification_dispatcher = notification_dispatcher
-        self._legacy_notification_service = notification_service
         self._list_batch_coordinator = list_batch_coordinator
         self._stats = SchedulerStats()
         self._running = False

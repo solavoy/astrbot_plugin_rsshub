@@ -400,7 +400,7 @@ async def test_onebot_ignores_layout_and_uses_merged_forward(monkeypatch):
         context=MessageContext(
             channel=ChannelInfo(title="Feed Title"),
             platform_name="aiocqhttp",
-            style=2,
+
         ),
     )
 
@@ -640,7 +640,7 @@ async def test_onebot_gif_from_downloaded_media_uses_image_in_forward(monkeypatc
                 LayoutFragment(kind="text", text="caption"),
             ],
         ),
-        context=MessageContext(platform_name="aiocqhttp", style=2),
+        context=MessageContext(platform_name="aiocqhttp"),
     )
 
     assert result.ok is True

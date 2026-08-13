@@ -6,8 +6,11 @@ from .entry_formatter import (
     EntryFormatInput,
     EntryOutputFormat,
     EntryTextFormatter,
+    format_dispatch_content,
+    media_items_from_parsed,
+    remove_media_placeholders,
 )
-from .formatter import MessageChainFormatter, MessageFormatter
+from .formatter import MessageChainFormatter
 
 __all__ = [
     "EffectivePushOptions",
@@ -17,5 +20,7 @@ __all__ = [
     "MessageComponent",
     "MessageComponentSorter",
     "MessageChainFormatter",
-    "MessageFormatter",
+    "format_dispatch_content",
+    "media_items_from_parsed",
+    "remove_media_placeholders",
 ]
