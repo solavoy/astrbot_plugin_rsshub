@@ -9,7 +9,7 @@ from __future__ import annotations
 from typing import Any
 from urllib.parse import parse_qsl, urlencode, urljoin, urlparse, urlunparse
 
-from ...domain.entities.content_types import AudioContent, EntryContentContext, VideoContent
+from ...domain.entities.content_types import EntryContentContext
 from ...infrastructure.pipeline import media_items_from_parsed, remove_media_placeholders
 from ...infrastructure.utils import get_logger
 from .html_parser import HTMLParser
@@ -77,9 +77,9 @@ class EntryDispatchPublisher:
 
         # 单次 HTML 解析：同时获得 html_tree（纯文本）与 media 列表。
         parsed = await HTMLParser(raw_content, feed_link=feed_link).parse()
-        plain_content = parsed.html_tree.get_plain().strip()
-        if any(isinstance(m, (AudioContent, VideoContent)) for m in parsed.media):
-            plain_content = remove_media_placeholders(plain_content)
+        plain_content = remove_media_placeholders(
+            parsed.html_tree.get_plain().strip()
+        )
         media_items = media_items_from_parsed(parsed.media)
         media_urls = [url for _t, url in media_items]
         for enclosure in getattr(entry, "enclosures", None) or []:

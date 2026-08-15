@@ -26,6 +26,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import importlib
+import subprocess
 import sys
 from pathlib import Path
 
@@ -341,8 +342,25 @@ TEST_CATEGORIES = {
         ("锁管理器", test_lock_manager),
         ("RSS 解析器", test_rss_parser_basic),
     ],
+    # 集成测试是 pytest 用例，run_tests() 在入口拦截 integration 类别并
+    # 委托 run_integration_tests()；此处保持空列表以免 all 类别遍历崩溃。
     "integration": [],
 }
+
+
+def run_integration_tests(verbose: bool = True) -> int:
+    """集成测试委托 pytest 运行 tests/integration/ 目录。
+
+    集成测试是 pytest 用例，轻量 runner 不重新实现其发现/夹具逻辑；
+    直接委托 python -m pytest 保证真实执行，返回 pytest 退出码。
+    """
+    integration_dir = Path(__file__).parent / "integration"
+    cmd = [sys.executable, "-m", "pytest", str(integration_dir)]
+    if verbose:
+        cmd.append("-v")
+    print(f"Running integration tests: {' '.join(cmd)}")
+    result = subprocess.run(cmd, check=False)
+    return result.returncode
 
 
 async def run_async_tests(category: str | None = None, verbose: bool = True):
@@ -382,6 +400,9 @@ def run_tests(category: str | None = None, verbose: bool = True):
     print_header("RSSHub Plugin Test Runner")
     print(f"Python: {sys.version}")
     print()
+
+    if category == "integration":
+        return run_integration_tests(verbose)
 
     # 运行测试
     print("Running tests...")
