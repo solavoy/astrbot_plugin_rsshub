@@ -2,6 +2,14 @@
 
 const { defineComponent, nextTick } = window.Vue;
 
+import { buildPushSuccessDataset, createPushSuccessLineChartOptions, formatBucketLabel } from '../../store/modules/charts.js';
+
+// Feed 健康分档中文标签与警示色；后端只返回 status 枚举。
+const FEED_HEALTH_LABELS = { healthy: '正常', warning: '预警', stale: '陈旧', disabled: '停用' };
+const FEED_HEALTH_COLORS = { healthy: '#16a34a', warning: '#f59e0b', stale: '#ef4444', disabled: '#94a3b8' };
+// 订阅占比环形图循环调色板（后端 items 不携带颜色字段）。
+const SHARE_PALETTE = ['#2563eb', '#f59e0b', '#16a34a', '#ef4444', '#8b5cf6', '#0ea5e9', '#f97316', '#14b8a6', '#64748b'];
+
 export const Overview = defineComponent({
   name: 'Overview',
   template: `
@@ -85,34 +93,10 @@ export const Overview = defineComponent({
           this._charts.push(new window.Chart(el, {
             type: 'line',
             data: {
-              labels: points.map((p) => this.formatBucket(p.bucket, charts.bucket_unit)),
-              datasets: [{
-                label: '成功率',
-                data: points.map((p) => p.rate),
-                borderColor: '#3b82f6',
-                backgroundColor: 'rgba(59, 130, 246, 0.1)',
-                fill: true,
-                tension: 0.3,
-                spanGaps: true,
-              }],
+              labels: points.map((p) => formatBucketLabel(p.bucket, charts.bucket_unit)),
+              datasets: [buildPushSuccessDataset(points)],
             },
-            options: {
-              responsive: true,
-              maintainAspectRatio: false,
-              scales: {
-                y: { suggestedMax: 100, grace: '8%' },
-              },
-              plugins: {
-                tooltip: {
-                  callbacks: {
-                    label: (ctx) => {
-                      const p = points[ctx.dataIndex];
-                      return `成功率: ${p.rate}%`;
-                    },
-                  },
-                },
-              },
-            },
+            options: createPushSuccessLineChartOptions(points),
           }));
         }
       }
@@ -124,11 +108,11 @@ export const Overview = defineComponent({
           this._charts.push(new window.Chart(el, {
             type: 'bar',
             data: {
-              labels: buckets.map((b) => b.label || b.status),
+              labels: buckets.map((b) => FEED_HEALTH_LABELS[b.status] || b.status),
               datasets: [{
                 label: 'Feed 数',
                 data: buckets.map((b) => b.count),
-                backgroundColor: buckets.map((b) => b.color || '#3b82f6'),
+                backgroundColor: buckets.map((b) => FEED_HEALTH_COLORS[b.status] || '#3b82f6'),
                 borderRadius: 4,
               }],
             },
@@ -147,7 +131,7 @@ export const Overview = defineComponent({
               labels: items.map((i) => i.title || i.name || '其他'),
               datasets: [{
                 data: items.map((i) => i.count),
-                backgroundColor: items.map((i) => i.color || '#3b82f6'),
+                backgroundColor: items.map((i, idx) => i.color || SHARE_PALETTE[idx % SHARE_PALETTE.length]),
                 borderWidth: 2,
               }],
             },
@@ -161,17 +145,6 @@ export const Overview = defineComponent({
         this._charts.forEach((c) => c.destroy());
         this._charts = [];
       }
-    },
-    formatBucket(iso, unit) {
-      if (!iso) return '';
-      const d = new Date(iso);
-      if (unit === 'day') {
-        return `${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getDate()).padStart(2, '0')}`;
-      }
-      if (unit === 'hour') {
-        return `${String(d.getHours()).padStart(2, '0')}:00`;
-      }
-      return `${d.getMonth() + 1}/${d.getDate()}`;
     },
   },
 });

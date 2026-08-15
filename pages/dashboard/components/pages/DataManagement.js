@@ -48,7 +48,7 @@ export const DataManagement = defineComponent({
               <tbody>
                 <tr v-for="file in store.exportFiles" :key="file.name">
                   <td class="cell-mono" :title="file.name">{{ file.name }}</td>
-                  <td>{{ formatBytes(file.size_bytes) }}</td>
+                  <td>{{ formatBytes(file.size) }}</td>
                   <td><button class="btn btn-text btn-action danger" type="button" @click="store.handleDeleteExportFile(file.name)">删除</button></td>
                 </tr>
               </tbody>

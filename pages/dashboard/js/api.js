@@ -54,7 +54,7 @@ export async function unsubscribe(subId, userId, deletePushHistory = false) {
 }
 
 export async function updateSubscription(subId, options, userId) {
-  return await apiPost('subscriptions/update', { sub_id: subId, user_id: userId, ...options });
+  return await apiPost('subscriptions/update', { sub_id: subId, user_id: userId, options });
 }
 
 export async function batchActivate(subIds, userId) {
@@ -88,7 +88,7 @@ export async function refreshFeeds(feedIds) {
 }
 
 export async function updateFeed(feedId, options) {
-  return await apiPost('feeds/update', { feed_id: feedId, ...options });
+  return await apiPost('feeds/update', { feed_id: feedId, options });
 }
 
 export async function deleteFeed(feedId, deletePushHistory = false) {
@@ -110,7 +110,7 @@ export async function getUserDetails(filters = {}) {
 }
 
 export async function updateUser(userId, settings) {
-  return await apiPost('users/update', { user_id: userId, ...settings });
+  return await apiPost('users/update', { user_id: userId, settings });
 }
 
 export async function deleteUser(userId, deletePushHistory = false) {
@@ -140,7 +140,7 @@ export async function deleteList(listId) {
 }
 
 export async function moveSubscriptionsToList(listId, subIds) {
-  return await apiPost('lists/move-subscriptions', { list_id: listId, sub_ids: subIds });
+  return await apiPost('lists/move-subscriptions', { target_list_id: listId, sub_ids: subIds });
 }
 
 export async function getEligibleSubscriptions(listId) {
@@ -209,8 +209,8 @@ export async function getSettings() {
   return await apiGet('settings');
 }
 
-export async function setSettings(settings) {
-  return await apiPost('settings', settings);
+export async function setSettings(settings, userId) {
+  return await apiPost('settings', { user_id: userId, settings });
 }
 
 // ─── 数据管理 ───────────────────────────────────────────

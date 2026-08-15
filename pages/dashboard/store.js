@@ -185,6 +185,19 @@ export const store = reactive({
     else this.selectedSubIds.splice(i, 1);
   },
 
+  // 后端批量操作要求 user_id 做归属校验；把选中的订阅按 owner 分组，逐用户调用。
+  _subIdsByUser() {
+    const byUser = {};
+    const byId = new Map(this.subs.map((s) => [s.id, s]));
+    for (const id of this.selectedSubIds) {
+      const sub = byId.get(id);
+      const uid = sub && sub.user_id ? sub.user_id : 'unknown';
+      if (!byUser[uid]) byUser[uid] = [];
+      byUser[uid].push(id);
+    }
+    return byUser;
+  },
+
   openAddPanel() {
     this.addPanelVisible = true;
     this.addUrl = '';
@@ -213,8 +226,13 @@ export const store = reactive({
   async batchActivate() {
     try {
       const { batchActivate } = await import('./js/api.js');
-      await batchActivate(this.selectedSubIds, undefined);
-      this.showToast('已批量启用', 'success');
+      const groups = this._subIdsByUser();
+      let count = 0;
+      for (const [userId, ids] of Object.entries(groups)) {
+        await batchActivate(ids, userId);
+        count += ids.length;
+      }
+      this.showToast(`已批量启用 ${count} 个订阅`, 'success');
       this.toggleEditMode();
       this.loadData();
     } catch (err) {
@@ -225,8 +243,13 @@ export const store = reactive({
   async batchDeactivate() {
     try {
       const { batchDeactivate } = await import('./js/api.js');
-      await batchDeactivate(this.selectedSubIds, undefined);
-      this.showToast('已批量禁用', 'success');
+      const groups = this._subIdsByUser();
+      let count = 0;
+      for (const [userId, ids] of Object.entries(groups)) {
+        await batchDeactivate(ids, userId);
+        count += ids.length;
+      }
+      this.showToast(`已批量禁用 ${count} 个订阅`, 'success');
       this.toggleEditMode();
       this.loadData();
     } catch (err) {
@@ -239,8 +262,13 @@ export const store = reactive({
       const { batchUnsubscribe } = await import('./js/api.js');
       const ok = await this.showConfirm('批量取消订阅', `确定取消选中的 ${this.selectedSubIds.length} 个订阅？`);
       if (!ok) return;
-      await batchUnsubscribe(this.selectedSubIds, undefined);
-      this.showToast('已批量取消', 'success');
+      const groups = this._subIdsByUser();
+      let count = 0;
+      for (const [userId, ids] of Object.entries(groups)) {
+        await batchUnsubscribe(ids, userId);
+        count += ids.length;
+      }
+      this.showToast(`已批量取消 ${count} 个订阅`, 'success');
       this.toggleEditMode();
       this.loadData();
     } catch (err) {
@@ -563,6 +591,7 @@ export const store = reactive({
   pushHistoryPage: 1,
   pushHistoryPageSize: 20,
   pushHistoryStatus: '',
+  pushHistoryKeyword: '',
 
   async loadPushHistory() {
     try {
@@ -572,6 +601,7 @@ export const store = reactive({
         page: this.pushHistoryPage,
         page_size: this.pushHistoryPageSize,
         status: this.pushHistoryStatus || undefined,
+        keyword: this.pushHistoryKeyword || undefined,
       });
       this.pushHistory = result && result.items ? result.items : [];
       this.pushHistoryTotal = result && result.total ? result.total : 0;
@@ -584,6 +614,7 @@ export const store = reactive({
 
   applyHistorySearch(q) {
     this.pushHistoryKeyword = q;
+    this.pushHistoryPage = 1;
     this.loadPushHistory();
   },
 
