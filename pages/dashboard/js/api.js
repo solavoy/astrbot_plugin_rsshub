@@ -1,66 +1,11 @@
-function getBridge() {
-  return typeof window !== 'undefined' ? window.AstrBotPluginPage || null : null;
-}
+// AstrBot Plugin Pages 业务 API 封装。所有请求走 bridge。
 
-function requireBridge() {
-  const bridge = getBridge();
-  if (!bridge) {
-    throw new Error('AstrBotPluginPage bridge not available');
-  }
-  return bridge;
-}
-
-function buildDirectApiUrl(path, params = {}) {
-  const normalizedPath = String(path || '').replace(/^\/+/, '');
-  const url = new URL(`/astrbot_plugin_rsshub/${normalizedPath}`, window.location.origin);
-  for (const [key, value] of Object.entries(params || {})) {
-    if (value === undefined || value === null || value === '') continue;
-    if (Array.isArray(value)) {
-      for (const item of value) {
-        if (item !== undefined && item !== null && item !== '') {
-          url.searchParams.append(key, String(item));
-        }
-      }
-      continue;
-    }
-    url.searchParams.set(key, String(value));
-  }
-  return url;
-}
+import { requireBridge } from './bridge.js';
 
 function toBridgePayload(value) {
-  if (value === undefined || value === null) {
-    return value;
-  }
-  if (typeof structuredClone === 'function') {
-    try {
-      return structuredClone(value);
-    } catch (_error) {
-      // Fall back to plain objects for reactive or otherwise non-cloneable values.
-    }
-  }
-  return cloneBridgeValue(value, new WeakSet());
-}
-
-function cloneBridgeValue(value, seen) {
-  if (value === undefined || value === null || typeof value !== 'object') {
-    return value;
-  }
-  if (seen.has(value)) {
-    throw new Error('Bridge payload contains circular references');
-  }
-  seen.add(value);
-  if (Array.isArray(value)) {
-    const cloned = value.map((item) => cloneBridgeValue(item, seen));
-    seen.delete(value);
-    return cloned;
-  }
-  const cloned = {};
-  for (const [key, item] of Object.entries(value)) {
-    cloned[key] = cloneBridgeValue(item, seen);
-  }
-  seen.delete(value);
-  return cloned;
+  if (value === undefined || value === null) return {};
+  if (typeof value === 'object' && !Array.isArray(value)) return value;
+  return { value };
 }
 
 function normalizeFilterValue(value) {
@@ -68,105 +13,66 @@ function normalizeFilterValue(value) {
     return normalizeFilterValue(value.values);
   }
   if (Array.isArray(value)) {
-    return value
-      .map((item) => String(item ?? '').trim())
-      .filter(Boolean);
+    return value.map((item) => String(item ?? '').trim()).filter(Boolean);
   }
   const normalized = String(value ?? '').trim();
   return normalized ? [normalized] : [];
 }
 
-function setArrayParam(params, key, value) {
-  const normalized = normalizeFilterValue(value);
-  if (normalized.length > 0) {
-    params[key] = normalized;
-  }
-}
-
-function setTextParam(params, key, value) {
-  const normalized = String(value ?? '').trim();
-  if (normalized) {
-    params[key] = normalized;
-  }
-}
-
-export async function ready() {
-  for (let attempt = 0; attempt < 50; attempt += 1) {
-    const bridge = getBridge();
-    if (bridge) {
-      return await bridge.ready();
-    }
-    await new Promise((resolve) => setTimeout(resolve, 100));
-  }
-  throw new Error('AstrBotPluginPage bridge not available');
-}
-
-async function handleResponse(result) {
-  if (result && result.ok !== undefined) {
-    if (!result.ok) throw new Error(result.error || result.message || '操作失败');
-    return result;
-  }
-  return result;
-}
-
 async function apiGet(path, params = {}) {
   const bridge = requireBridge();
-  const result = await bridge.apiGet(path, toBridgePayload(params));
-  return await handleResponse(result);
+  const cleanParams = {};
+  for (const [key, value] of Object.entries(params || {})) {
+    if (value === undefined || value === null || value === '') continue;
+    if (Array.isArray(value)) {
+      const normalized = normalizeFilterValue(value);
+      if (normalized.length) cleanParams[key] = normalized;
+    } else {
+      cleanParams[key] = value;
+    }
+  }
+  return await bridge.apiGet(path, cleanParams);
 }
 
 async function apiPost(path, payload = {}) {
   const bridge = requireBridge();
-  const result = await bridge.apiPost(path, toBridgePayload(payload));
-  return await handleResponse(result);
-}
-
-async function apiPostRaw(path, payload = {}) {
-  const bridge = requireBridge();
   return await bridge.apiPost(path, toBridgePayload(payload));
 }
 
+// ─── 订阅 ───────────────────────────────────────────────
+
 export async function getSubscriptions(filters = {}) {
-  const params = {};
-  setArrayParam(params, 'user_id', filters.user_id);
-  if (filters.feed_id !== undefined && filters.feed_id !== null && filters.feed_id !== '') {
-    setArrayParam(params, 'feed_id', filters.feed_id);
-  }
-  setArrayParam(params, 'feed_link', filters.feed_link);
-  if (filters.sub_id !== undefined && filters.sub_id !== null && filters.sub_id !== '') {
-    setArrayParam(params, 'sub_id', filters.sub_id);
-  }
-  setTextParam(params, 'keyword', filters.keyword);
-  const r = await apiGet('subscriptions', params);
-  return { items: r.items || [], total: r.total || 0 };
+  return await apiGet('subscriptions', filters);
 }
 
-export async function getFeeds(filters = {}) {
-  const params = {};
-  setArrayParam(params, 'feed_id', filters.feed_id);
-  setTextParam(params, 'keyword', filters.keyword);
-  const r = await apiGet('feeds', params);
-  return { items: r.items || [], total: r.total || 0 };
-}
-
-export async function getSuggestions(scope, field, q = '', limit = 10) {
-  const params = { scope, field, limit };
-  setTextParam(params, 'q', q);
-  const r = await apiGet('suggestions', params);
-  return { items: r.items || [] };
+export async function subscribe(url, options = {}) {
+  return await apiPost('subscribe', { url, ...options });
 }
 
 export async function unsubscribe(subId, userId, deletePushHistory = false) {
-  const payload = { sub_id: subId };
-  if (userId) payload.user_id = userId;
-  if (deletePushHistory) payload.delete_push_history = true;
-  return await apiPost('unsubscribe', payload);
+  return await apiPost('unsubscribe', { sub_id: subId, user_id: userId, delete_push_history: deletePushHistory });
 }
 
 export async function updateSubscription(subId, options, userId) {
-  const payload = { sub_id: subId, options };
-  if (userId) payload.user_id = userId;
-  return await apiPost('subscriptions/update', payload);
+  return await apiPost('subscriptions/update', { sub_id: subId, user_id: userId, ...options });
+}
+
+export async function batchActivate(subIds, userId) {
+  return await apiPost('batch/activate', { sub_ids: subIds, user_id: userId });
+}
+
+export async function batchDeactivate(subIds, userId) {
+  return await apiPost('batch/deactivate', { sub_ids: subIds, user_id: userId });
+}
+
+export async function batchUnsubscribe(subIds, userId, deletePushHistory = false) {
+  return await apiPost('batch/unsubscribe', { sub_ids: subIds, user_id: userId, delete_push_history: deletePushHistory });
+}
+
+// ─── Feed ───────────────────────────────────────────────
+
+export async function getFeeds(filters = {}) {
+  return await apiGet('feeds', filters);
 }
 
 export async function getFeedItems(feedId, page = 1, pageSize = 20) {
@@ -182,105 +88,93 @@ export async function refreshFeeds(feedIds) {
 }
 
 export async function updateFeed(feedId, options) {
-  return await apiPost('feeds/update', { feed_id: feedId, options });
+  return await apiPost('feeds/update', { feed_id: feedId, ...options });
 }
 
 export async function deleteFeed(feedId, deletePushHistory = false) {
-  return await apiPost('feeds/delete', {
-    feed_id: feedId,
-    delete_push_history: Boolean(deletePushHistory),
-  });
+  return await apiPost('feeds/delete', { feed_ids: [feedId], delete_push_history: deletePushHistory });
 }
 
 export async function deleteFeeds(feedIds, deletePushHistory = false) {
-  return await apiPost('feeds/delete', {
-    feed_ids: feedIds,
-    delete_push_history: Boolean(deletePushHistory),
-  });
+  return await apiPost('feeds/delete', { feed_ids: feedIds, delete_push_history: deletePushHistory });
 }
 
-export async function getPluginSettings() {
-  return await apiGet('plugin-settings');
+// ─── 用户 ───────────────────────────────────────────────
+
+export async function getUsers(filters = {}) {
+  return await apiGet('users', filters);
 }
 
-export async function setPluginSettings({
-  subscription_defaults = {},
-  history_retention_days,
-} = {}) {
-  const payload = { subscription_defaults };
-  if (history_retention_days !== undefined) {
-    payload.history_retention_days = history_retention_days;
-  }
-  return await apiPost('plugin-settings', payload);
+export async function getUserDetails(filters = {}) {
+  return await apiGet('users/detail', filters);
 }
 
-export async function testSubscription(subId, userId, targetSession, platformName) {
-  const payload = { sub_id: subId };
-  if (userId) payload.user_id = userId;
-  if (targetSession) payload.target_session = targetSession;
-  if (platformName) payload.platform_name = platformName;
-  return await apiPost('test-subscription', payload);
+export async function updateUser(userId, settings) {
+  return await apiPost('users/update', { user_id: userId, ...settings });
 }
 
-export async function batchActivate(subIds, userId) {
-  const payload = { sub_ids: subIds };
-  if (userId) payload.user_id = userId;
-  return await apiPost('batch/activate', payload);
+export async function deleteUser(userId, deletePushHistory = false) {
+  return await apiPost('users/delete', { user_id: userId, delete_push_history: deletePushHistory });
 }
 
-export async function batchDeactivate(subIds, userId) {
-  const payload = { sub_ids: subIds };
-  if (userId) payload.user_id = userId;
-  return await apiPost('batch/deactivate', payload);
+export async function deleteUsers(userIds, deletePushHistory = false) {
+  return await apiPost('users/delete', { user_ids: userIds, delete_push_history: deletePushHistory });
 }
 
-export async function batchUnsubscribe(subIds, userId, deletePushHistory = false) {
-  const payload = { sub_ids: subIds };
-  if (userId) payload.user_id = userId;
-  if (deletePushHistory) payload.delete_push_history = true;
-  return await apiPost('batch/unsubscribe', payload);
+// ─── Lists ──────────────────────────────────────────────
+
+export async function getLists() {
+  return await apiGet('lists');
 }
 
-export async function getStats() {
-  return await apiGet('stats');
+export async function createList(payload) {
+  return await apiPost('lists/create', payload);
 }
 
-export async function getDashboardCharts(range = '7d') {
-  return await apiGet('dashboard/charts', { range });
+export async function updateList(listId, payload) {
+  return await apiPost('lists/update', { list_id: listId, ...payload });
 }
 
-let previousCounter = 0;
+export async function deleteList(listId) {
+  return await apiPost('lists/delete', { list_id: listId });
+}
 
-export async function getPushHistory({
-  status = '',
-  feedLink = '',
-  keyword = '',
-  page = 1,
-  pageSize = 20,
-} = {}) {
-  const params = { page, page_size: pageSize };
-  if (status) params.status = status;
-  setArrayParam(params, 'feed_link', feedLink);
-  setTextParam(params, 'keyword', keyword);
-  const r = await apiGet('push-history', params);
-  return {
-    items: r.items || [],
-    total: r.total || 0,
-    page: r.page || 1,
-    page_size: r.page_size || pageSize,
-  };
+export async function moveSubscriptionsToList(listId, subIds) {
+  return await apiPost('lists/move-subscriptions', { list_id: listId, sub_ids: subIds });
+}
+
+export async function getEligibleSubscriptions(listId) {
+  return await apiGet('lists/eligible-subscriptions', { list_id: listId });
+}
+
+export async function getListBatches(listId, page = 1, pageSize = 20) {
+  return await apiGet('lists/batches', { list_id: listId, page, page_size: pageSize });
+}
+
+export async function retryListBatch(batchId) {
+  return await apiPost('lists/batches/retry', { batch_id: batchId });
+}
+
+export async function flushList(listId) {
+  return await apiPost('lists/flush', { list_id: listId });
+}
+
+export async function clearListQueue(listId) {
+  return await apiPost('lists/clear-queue', { list_id: listId });
+}
+
+// ─── 推送历史 ───────────────────────────────────────────
+
+export async function getPushHistory(filters = {}) {
+  return await apiGet('push-history', filters);
 }
 
 export async function deletePushHistory(historyId) {
   return await apiPost('push-history/delete', { history_id: historyId });
 }
 
-export async function deletePushHistoryBatch(historyIds) {
-  return await apiPost('push-history/delete', { history_ids: historyIds });
-}
-
 export async function retryPushHistory(historyId) {
-  return await apiPostRaw('push-history/retry', { history_id: historyId });
+  return await apiPost('push-history/retry', { history_id: historyId });
 }
 
 export async function cleanupPushHistory(days = 30) {
@@ -291,39 +185,42 @@ export async function clearPushHistory() {
   return await apiPost('push-history/clear', {});
 }
 
-export async function getUserDetails(filters = {}) {
-  const params = {};
-  setArrayParam(params, 'user_id', filters.user_id);
-  setTextParam(params, 'keyword', filters.keyword);
-  const r = await apiGet('users/detail', params);
-  return { items: r.items || [], total: r.total || 0 };
+// ─── 概览 / 统计 ────────────────────────────────────────
+
+export async function getStats() {
+  return await apiGet('stats');
 }
 
-export async function updateUser(userId, settings) {
-  return await apiPost('users/update', { user_id: userId, settings });
+export async function getDashboardCharts(range = '7d') {
+  return await apiGet('dashboard/charts', { range });
 }
 
-export async function deleteUser(userId, deletePushHistory = false) {
-  return await apiPost('users/delete', {
-    user_id: userId,
-    delete_push_history: Boolean(deletePushHistory),
-  });
+// ─── 设置 ───────────────────────────────────────────────
+
+export async function getPluginSettings() {
+  return await apiGet('plugin-settings');
 }
 
-export async function deleteUsers(userIds, deletePushHistory = false) {
-  return await apiPost('users/delete', {
-    user_ids: userIds,
-    delete_push_history: Boolean(deletePushHistory),
-  });
+export async function setPluginSettings(settings) {
+  return await apiPost('plugin-settings', settings);
 }
+
+export async function getSettings() {
+  return await apiGet('settings');
+}
+
+export async function setSettings(settings) {
+  return await apiPost('settings', settings);
+}
+
+// ─── 数据管理 ───────────────────────────────────────────
 
 export async function getDataManagementOverview() {
   return await apiGet('data-management/overview');
 }
 
 export async function getDataManagementExports() {
-  const r = await apiGet('data-management/exports');
-  return { items: r.items || [] };
+  return await apiGet('data-management/exports');
 }
 
 export async function clearDataManagementCache() {
@@ -342,62 +239,20 @@ export async function getDataManagementExportContent(name) {
   return await apiGet('data-management/exports/content', { name });
 }
 
-export async function getLists() {
-  const r = await apiGet('lists');
-  return { items: r.items || [], total: r.total || 0 };
+// ─── 工具 ───────────────────────────────────────────────
+
+export async function getSuggestions(scope, field, q = '', limit = 10) {
+  return await apiGet('suggestions', { scope, field, q, limit });
 }
 
-export async function createList(payload) {
-  return await apiPost('lists/create', payload);
+export async function testSubscription(subId, userId, targetSession, platformName) {
+  return await apiPost('test-subscription', { sub_id: subId, user_id: userId, target_session: targetSession, platform_name: platformName });
 }
 
-export async function updateList(payload) {
-  return await apiPost('lists/update', payload);
-}
-
-export async function deleteList(listId, deleteSubscriptions = false) {
-  return await apiPost('lists/delete', {
-    list_id: listId,
-    delete_subscriptions: Boolean(deleteSubscriptions),
-  });
-}
-
-export async function moveSubscriptions(subIds, targetListId) {
-  return await apiPost('lists/move-subscriptions', {
-    sub_ids: subIds,
-    target_list_id: targetListId,
-  });
-}
-
-export async function getEligibleSubscriptions(listId) {
-  return await apiGet('lists/eligible-subscriptions', { list_id: listId });
-}
-
-export async function getListBatches(listId) {
-  const r = await apiGet('lists/batches', { list_id: listId });
-  return { items: r.items || [], total: r.total || 0 };
-}
-
-export async function retryListBatch(batchId) {
-  return await apiPost('lists/batches/retry', { batch_id: batchId });
-}
-
-export async function flushList(listId) {
-  return await apiPost('lists/flush', { list_id: listId });
-}
-
-export async function clearListQueue(listId) {
-  return await apiPost('lists/clear-queue', { list_id: listId });
+export async function testUrl(url) {
+  return await apiPost('test-url', { url });
 }
 
 export async function checkUpdates() {
-  try {
-    const r = await apiGet('updates');
-    const counter = r?.counter ?? 0;
-    const changed = counter !== previousCounter;
-    previousCounter = counter;
-    return { changed };
-  } catch {
-    return { changed: false };
-  }
+  return await apiGet('updates');
 }
