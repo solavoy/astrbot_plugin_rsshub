@@ -833,6 +833,12 @@ def test_factory_maps_weixin_aliases_to_dedicated_sender():
     assert get_sender_for_platform("wechat") is WeixinOCMessageSender
 
 
+def test_factory_uses_default_sender_for_lark():
+    # Lark 走默认统一骨架（全部按 Markdown 推送），无专属 sender。
+    assert get_sender_for_platform("lark") is DefaultMessageSender
+    assert get_sender_for_platform("feishu") is DefaultMessageSender
+
+
 @pytest.mark.asyncio
 async def test_telegram_large_local_image_is_sent_as_file(monkeypatch, tmp_path):
     """>10MB 本地图超出 photo 上限：走 MediaSendPlanner 候选改写，降级为 document/file 发送。"""

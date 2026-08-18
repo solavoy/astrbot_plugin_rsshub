@@ -436,13 +436,22 @@ async def test_format_entry_defaults_to_markdown():
     assert "via [https://e\\.com/x](https://e\\.com/x) | F" in text
 
 
-def test_should_render_markdown_only_for_telegram():
-    # 仅 Telegram（含短名 tg/别名）原生渲染 Markdown
-    assert EntryTextFormatter.should_render_markdown("telegram") is True
-    assert EntryTextFormatter.should_render_markdown("tg") is True
-    assert EntryTextFormatter.should_render_markdown("Telegram") is True
-    for platform in ("onebot", "aiocqhttp", "qq_official", "weixin_oc", "", None):
-        assert EntryTextFormatter.should_render_markdown(platform) is False
+def test_should_render_markdown_for_all_platforms():
+    # 全部渠道统一按 Markdown 文本推送，不做纯文本降级
+    for platform in (
+        "telegram",
+        "tg",
+        "lark",
+        "feishu",
+        "onebot",
+        "aiocqhttp",
+        "qq_official",
+        "weixin_oc",
+        "weixin",
+        "",
+        None,
+    ):
+        assert EntryTextFormatter.should_render_markdown(platform) is True
 
 
 @pytest.mark.asyncio

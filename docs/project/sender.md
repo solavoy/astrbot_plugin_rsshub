@@ -79,9 +79,9 @@ QQ Official 是例外：当媒体在**发送时刻**被平台拒绝（整条 cha
 
 ### Markdown 文本发送
 
-RSS 文本格式化层统一输出规范 Markdown：标题加粗、可点击 via 链接、`---` 归属分隔线，转义按 MarkdownV2 全集合处理（`docs/project/sender.md` 契约：AstrBot Telegram adapter 对 Plain 文本走 MarkdownV2 转换）。
+RSS 文本格式化层统一输出规范 Markdown：标题加粗、可点击 via 链接、`---` 归属分隔线，转义按 MarkdownV2 全集合处理。
 
-只有 Telegram 会真正渲染 Markdown（`MessageChain.use_markdown(True)`，按 context 的 `render_markdown` 标记）；其余平台（OneBot / QQ 官方 / 微信 / 默认 sender）在发送边界用 `markdown_to_plain` 把 Markdown 降级为可读纯文本，避免 `**标题**`、`[链接](链接)` 等原始语法直接暴露给用户。`sender_strategies.markdown_platforms` 配置已移除。
+所有渠道统一按 Markdown 原文推送（`should_render_markdown` 恒为真，不再在发送边界把 Markdown 降级为纯文本）。各平台/适配器按其能力渲染：Telegram 走 MarkdownV2，Lark(飞书) 由适配器 post 富文本的 `md` 元素渲染，其余平台取决于各自适配器对 Markdown 的支持。`sender_strategies.markdown_platforms` 配置已移除。
 
 QQ Official 的运行时开关在 `sender_strategies.platform_strategies` 的 `qq_official_strategy.markdown_mode`：
 
@@ -89,9 +89,9 @@ QQ Official 的运行时开关在 `sender_strategies.platform_strategies` 的 `q
 - `force`：预留强制 Markdown 策略。
 - `plain`：纯文本策略。
 
-QQ Official sender 必须通过 AstrBot `MessageChain.use_markdown_` 控制 Markdown，不能绕过 core 手写 botpy payload。当前主动推送链路按 `should_render_markdown` 决定是否渲染，非 Telegram 平台显式降级为纯文本。
+QQ Official sender 必须通过 AstrBot `MessageChain.use_markdown` 控制 Markdown，不能绕过 core 手写 botpy payload。当前主动推送链路统一按 `should_render_markdown`（恒真）推送 Markdown 原文；QQ 的 `_use_markdown_for_context` 仍是兼容守卫（暂返回 False），若实测 QQ 渲染异常可据此单独调整。
 
-Telegram 的 Markdown 由 `should_render_markdown(platform)` 判定。插件只优化 Plain 文本文案，AstrBot Telegram adapter 会对 Plain 文本走 MarkdownV2 转换；媒体 caption Markdown 不是当前插件承诺面。
+Telegram 的 Markdown 走 MarkdownV2；插件只优化 Plain 文本文案，AstrBot Telegram adapter 会对 Plain 文本走 MarkdownV2 转换；媒体 caption Markdown 不是当前插件承诺面。
 
 ### OneBot 合并转发
 

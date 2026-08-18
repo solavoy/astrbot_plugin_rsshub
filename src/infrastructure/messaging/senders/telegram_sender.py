@@ -213,8 +213,10 @@ class TelegramMessageSender(DefaultMessageSender):
 
     def _resolve_use_markdown(
         self, context: MessageContext | None, platform: str
-    ) -> bool:
-        return bool(self._context_render_markdown(context))
+    ) -> bool | None:
+        # 保持旧原生路径语义：context 未显式声明时返回 None（由 adapter 取默认），
+        # 不要强转 False——telegram 正文仍是 MarkdownV2，强禁渲染会把 `**粗体**` 原文发出去。
+        return self._context_render_markdown(context)
 
     def _apply_first_send_candidates(
         self,

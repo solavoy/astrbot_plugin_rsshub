@@ -13,8 +13,6 @@ from ....shared.constants import (
     QQ_OFFICIAL_DEGRADE_STRATEGY_FAIL,
     QQ_OFFICIAL_DEGRADE_STRATEGY_FILE_THEN_LINK,
     QQ_OFFICIAL_DEGRADE_STRATEGY_LINK_ONLY,
-    QQ_OFFICIAL_MARKDOWN_MODE_AUTO,
-    QQ_OFFICIAL_MARKDOWN_MODE_OPTIONS,
 )
 from ...pipeline import MessageComponent
 from .base_sender import DefaultMessageSender
@@ -78,9 +76,12 @@ class QQOfficialMessageSender(DefaultMessageSender):
         统一骨架把全部正文与媒体合成一条 chain 发送；若平台在发送时刻拒绝某个媒体，
         整条 chain 大概率整体未送达。旧实现（已删除的 _send_components_media_first /
         _counts_degraded_media_delivery_as_success）会在这种发送时刻失败时为每个媒体
-        尝试 _send_component_fallback_candidates（文件候选 → 原文链接文本），任一降级
-        送达成功即返回 ok=True——"QQ 官方降级送达视为成功"，避免轮询循环把已送达的
-        消息当作失败重复补推。此处经新钩子恢复该语义。
+        尝试 _send_component_fallback_candidates（文件候选 → 原文链接文本），丢失的
+        媒体 URL 折入（重发的）正文文本。此处经新钩子恢复该语义。
+
+        判定口径：只有"正文被某种形式真实送达"（生成媒体纯文本回退 / 重发正文文本）
+        才返回 ok=True——避免正文根本没到用户手里却被标记为成功，导致轮询不再补推。
+        仅某媒体降级为文件送达不构成"消息已送达"。
 
         注意：这是"发送时刻失败"的降级，与 _maybe_degrade_before_send 的阈值预判降级
         相互独立（默认阈值 0 不触发预判，但发送失败仍走这里）。
@@ -93,23 +94,32 @@ class QQOfficialMessageSender(DefaultMessageSender):
                 use_markdown=use_markdown,
             )
 
-        # 先走统一骨架原有的「生成媒体纯文本回退」（只作用于 layout 中带 fallback_text
-        # 的生成媒体）；未命中时原样返回 failed_result，再进入 QQ 文件/链接降级。
+        media_components = [
+            component for component in components if self._is_media_component(component)
+        ]
+        if not media_components:
+            # 纯文本失败：不静默重发正文，保持旧的“单一阶段失败”语义，交给轮询补推。
+            return failed_result
+
+        failures: list[SendResult] = [failed_result]
+        failed_urls: list[str] = []
+        # 正文是否已真实送达（生成回退成功 / 正文（含链接）重发成功）。
+        text_delivered = False
+
+        # 先生成媒体纯文本回退（只作用于 layout 中带 fallback_text 的生成媒体）；命中即
+        # 视为正文已送出，仍要继续处理失败的非生成媒体，避免静默丢失其链接。
         generated = await self._retry_text_with_generated_fallbacks(
             request,
             failed_result,
             use_markdown=use_markdown,
         )
         if generated is not failed_result:
-            return generated
-
-        failures: list[SendResult] = [failed_result]
-        failed_urls: list[str] = []
-        degraded_delivery_ok = False
+            text_delivered = True
 
         try_file_fallback = strategy == QQ_OFFICIAL_DEGRADE_STRATEGY_FILE_THEN_LINK
-        for component in components:
-            if not self._is_media_component(component):
+        for component in media_components:
+            # 生成占位媒体已由上面纯文本回退连同正文送出，不再重复降级。
+            if text_delivered and component.fallback_text:
                 continue
             if try_file_fallback and self._media_has_remaining_fallback(
                 component, prepared_media_by_url
@@ -124,24 +134,43 @@ class QQOfficialMessageSender(DefaultMessageSender):
                 )
                 failures.extend(fallback.failures)
                 if fallback.ok:
-                    degraded_delivery_ok = True
                     continue
-            # 无法（或未）降级为文件候选的媒体：折入正文链接文本
+            # 无法（或未）降级为文件候选的媒体：URL 折入待发文本
             self._record_failed_url(failed_urls, component)
 
-        # 重新送出正文（含失败媒体链接）；正文可送达也算降级送达成功
-        text_result = await self._send_failed_media_links_text(
-            request,
-            components,
-            failed_urls,
-            use_markdown=use_markdown,
-        )
-        if text_result.ok:
-            degraded_delivery_ok = True
-        else:
-            failures.append(self._result_with_stage(text_result, "degrade_text"))
+        if failed_urls:
+            if text_delivered:
+                # 正文已由上一步送出，只补发失败媒体链接清单，避免重复正文。
+                text_result = await self._send_failed_links_only(
+                    request,
+                    failed_urls,
+                    use_markdown=use_markdown,
+                )
+            else:
+                text_result = await self._send_failed_media_links_text(
+                    request,
+                    components,
+                    failed_urls,
+                    use_markdown=use_markdown,
+                )
+            if text_result.ok:
+                text_delivered = True
+            else:
+                failures.append(self._result_with_stage(text_result, "degrade_text"))
+        elif not text_delivered:
+            # 媒体全部降级送达但正文始终没送出：必须把正文文本补发出去。
+            text_result = await self._send_failed_media_links_text(
+                request,
+                components,
+                [],
+                use_markdown=use_markdown,
+            )
+            if text_result.ok:
+                text_delivered = True
+            else:
+                failures.append(self._result_with_stage(text_result, "degrade_text"))
 
-        if degraded_delivery_ok:
+        if text_delivered:
             return SendResult(ok=True)
         return self._partial_send_result(failures)
 
@@ -307,17 +336,25 @@ class QQOfficialMessageSender(DefaultMessageSender):
             use_markdown=use_markdown,
         )
 
-    @staticmethod
-    def _markdown_mode_for_context(context: MessageContext | None) -> str:
-        strategy = getattr(context, "sender_strategy", None)
-        mode = str(
-            getattr(strategy, "markdown_mode", "")
-            or (strategy.get("markdown_mode", "") if isinstance(strategy, dict) else "")
-            or QQ_OFFICIAL_MARKDOWN_MODE_AUTO
+    async def _send_failed_links_only(
+        self,
+        request: SendRequest,
+        failed_urls: list[str],
+        *,
+        use_markdown: bool | None = None,
+    ) -> SendResult:
+        """正文已送出时，只补发失败媒体链接清单，避免重复正文。"""
+        text = self._append_failed_links("", failed_urls)
+        if not text:
+            return SendResult(ok=False, detail="empty_message")
+
+        from astrbot.api.message_components import Plain
+
+        return await self._send_chain(
+            request.session_id,
+            [Plain(text)],
+            use_markdown=use_markdown,
         )
-        if mode not in QQ_OFFICIAL_MARKDOWN_MODE_OPTIONS:
-            return QQ_OFFICIAL_MARKDOWN_MODE_AUTO
-        return mode
 
     @classmethod
     def _use_markdown_for_context(

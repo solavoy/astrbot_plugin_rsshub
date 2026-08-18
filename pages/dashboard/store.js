@@ -240,24 +240,31 @@ export const store = reactive({
   },
 
   async saveSubEdit() {
+    if (this.subEditLoading) return;
     const f = this.subEditForm;
     if (!f.id) return;
+    this.subEditLoading = true;
     try {
       const { updateSubscription } = await import('./js/api.js');
-      this.subEditLoading = true;
-      await updateSubscription(f.id, {
+      // 0 / 负值 = 继承（后端继承哨兵为 -100，拒绝 0）
+      const interval = Number(f.interval);
+      const options = {
         target_session: String(f.target_session || '').trim(),
         platform_name: String(f.platform_name || '').trim(),
-        interval: Number(f.interval) || 0,
+        interval: interval > 0 ? interval : -100,
         state: Number(f.state) === 1 ? 1 : 0,
-      }, f.user_id);
-      this.subEditLoading = false;
+      };
+      const result = await updateSubscription(f.id, options, f.user_id);
+      if (result && result.ok === false) {
+        throw new Error((result && result.message) || '更新失败，请重试');
+      }
       this.closeSubEditPanel();
       this.showToast('已更新订阅', 'success');
       this.loadData();
     } catch (err) {
-      this.subEditLoading = false;
       this.showToast(`更新失败: ${err.message}`, 'error');
+    } finally {
+      this.subEditLoading = false;
     }
   },
 

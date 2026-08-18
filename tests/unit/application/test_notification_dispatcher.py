@@ -93,8 +93,8 @@ async def test_dispatch_sends_via_injected_sender_provider():
 
 
 @pytest.mark.asyncio
-async def test_dispatch_formats_markdown_only_for_telegram():
-    """自动按平台：Telegram 输出 Markdown 排版，OneBot 保持纯文本。"""
+async def test_dispatch_formats_markdown_for_all_platforms():
+    """所有平台统一输出 Markdown 排版并标记渲染。"""
     sender = FakeSender()
     subscriptions = [
         Subscription(
@@ -158,15 +158,15 @@ async def test_dispatch_formats_markdown_only_for_telegram():
     )
     assert tg_ctx.render_markdown is True
 
-    # OneBot：内容统一为 Markdown，渲染标记为 False（由 sender 边界降级）
+    # OneBot：内容同样为 Markdown 并标记渲染
     ob_req, ob_ctx = requests["onebot:user-2"]
     assert "**title**" in ob_req.message
-    assert ob_ctx.render_markdown is False
+    assert ob_ctx.render_markdown is True
 
 
 @pytest.mark.asyncio
-async def test_dispatch_non_telegram_marks_render_markdown_false():
-    """非 Telegram 平台内容统一为 Markdown，渲染标记为 False（sender 层降级）。"""
+async def test_dispatch_marks_render_markdown_true_for_all():
+    """所有平台内容统一为 Markdown，渲染标记为 True。"""
     sender = FakeSender()
     sub = Subscription(
         id=1,
@@ -208,7 +208,7 @@ async def test_dispatch_non_telegram_marks_render_markdown_false():
     req, ctx = sender.requests[0]
     assert "**title**" in req.message
     assert "via [https://example\\.com/entry]" in req.message
-    assert ctx.render_markdown is False
+    assert ctx.render_markdown is True
 
 
 @pytest.mark.asyncio

@@ -9,7 +9,6 @@ from typing import Any
 
 from ...application.services.html_parser import HTMLParser
 from ...domain.entities.content_types import AudioContent, FileContent, VideoContent
-from ...shared.constants import PLATFORM_ALIASES
 from ..rendering import cleanup_ephemeral_generated_media_paths
 from ..utils import get_logger
 
@@ -21,14 +20,6 @@ class EntryOutputFormat(str, Enum):
 
     PLAIN = "plain"
     MARKDOWN = "markdown"
-
-
-# 平台别名 → 规范名，用于把订阅的 platform_name 归一化后匹配配置的勾选渠道。
-_PLATFORM_ALIAS_TO_CANONICAL: dict[str, str] = {
-    alias: canonical
-    for canonical, aliases in PLATFORM_ALIASES.items()
-    for alias in aliases
-}
 
 
 @dataclass(frozen=True)
@@ -146,14 +137,13 @@ class EntryTextFormatter:
 
     @classmethod
     def should_render_markdown(cls, platform: str | None) -> bool:
-        """平台是否原生渲染 Markdown。
+        """是否保持 Markdown 原文推送（不做纯文本降级）。
 
-        仅 Telegram（含短名 tg/别名）能渲染 MarkdownV2；其余平台由 sender
-        在发送边界把规范 Markdown 降级为可读纯文本，避免原文直接暴露。
+        全部渠道统一按 Markdown 文本推送，由各平台/适配器按其能力渲染
+        （Telegram MarkdownV2、Lark post 富文本 md 元素、其余平台看适配器支持）。
+        不再在发送边界把规范 Markdown 降级为纯文本。
         """
-        normalized = str(platform or "").strip().lower()
-        canonical = _PLATFORM_ALIAS_TO_CANONICAL.get(normalized, normalized)
-        return canonical == "telegram"
+        return True
 
     @staticmethod
     async def clean_text(value: str, *, render_tables_as_images: bool = True) -> str:

@@ -40,11 +40,20 @@ def _fence_repl(match: re.Match[str]) -> str:
     return block.strip("\n")
 
 
+def _normalize_link_text(value: str) -> str:
+    """去掉 Markdown 强调标记与尾部斜杠，用于判断「链接文本是否即 URL」的去重。"""
+    return re.sub(r"[*_`~]", "", value or "").strip().strip("/")
+
+
 def _link_repl(match: re.Match[str]) -> str:
-    """``[文本](url)`` → ``文本 (url)``；链接文本即 URL 时只保留一份。"""
+    """``[文本](url)`` → ``文本 (url)``；链接文本即 URL 时只保留一份。
+
+    归一化后比较（忽略加粗/斜体标记、尾部斜杠），避免
+    ``[**url**](url)`` / ``[url/](url)`` 仍复现 ``url (url)`` 重复。
+    """
     text_part = match.group(1)
     url_part = match.group(2)
-    if text_part.strip() == url_part.strip():
+    if _normalize_link_text(text_part) == _normalize_link_text(url_part):
         return text_part
     return f"{text_part} ({url_part})"
 

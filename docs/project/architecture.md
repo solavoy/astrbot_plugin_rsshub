@@ -104,7 +104,7 @@ LLM tools 的入口仍由 `main.py` 注册；具体实现按主题放在 `src/ap
 - `failed_queue_max_retries` 只控制自动重试上限
 - `deduplicate_multi_bot` 只在同一 `target_session` 且最终 payload 等价时压重，并把被压掉的记录写成 `skipped`
 
-sender 层仍保持平台差异隔离：`MessageComponentSorter` 只给出组件顺序，是否拆成多次发送由具体 sender adapter 决定。所有内容统一为规范 Markdown 正文 + 有序媒体集合，顺序固定为正文 → 图片 → 视频 → 音频 → 文件；Telegram 原生渲染 Markdown，其余平台由 sender 边界降级纯文本。`style` 排版策略已移除。QQ Official 单图会和文本合链，Weixin OC 不合链，OneBot 合并转发失败后会回退为纯文本 Nodes。
+sender 层保持平台差异隔离：所有平台共用 `DefaultMessageSender.send_to_user` 统一骨架，把内容组为 正文 → 媒体 → 尾 的一条链，顺序固定（不做配置）；是否拆成多次发送由具体 sender adapter 决定。全部渠道统一按 Markdown 原文推送（不做纯文本降级），由各适配器按其能力渲染。`style` 排版策略已移除。平台专属行为由钩子承担：QQ Official 媒体数阈值降级与发送失败降级、Telegram Telegraph 分流与超大图转文件、OneBot 合并转发失败后回退为纯文本 Nodes。
 
 ### 2. 测试推送
 

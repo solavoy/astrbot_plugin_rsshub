@@ -1008,24 +1008,30 @@ async def test_platform_senders_clean_self_prepared_owned_paths(
     assert not owned.exists()
 
 
-def test_degrade_markdown_for_platform_keeps_telegram_and_strips_others():
-    from astrbot_plugin_rsshub.src.infrastructure.pipeline import MessageComponent
-    from astrbot_plugin_rsshub.src.infrastructure.messaging.senders.base_sender import (
-        DefaultMessageSender,
-    )
+@pytest.mark.asyncio
+async def test_build_components_keeps_markdown_text_for_all_platforms(monkeypatch):
+    # 全部渠道统一按 Markdown 原文推送：不再做纯文本降级，正文保留 Markdown。
+    from astrbot.api.message_components import Plain
 
-    markdown_components = [
-        MessageComponent(kind="text", text="**标题**\n\n---\n\n正文 [链接](https://e.com/x)"),
-    ]
+    calls: list = []
 
-    tg = DefaultMessageSender._degrade_markdown_for_platform(
-        list(markdown_components), "telegram"
-    )
-    assert tg[0].text == "**标题**\n\n---\n\n正文 [链接](https://e.com/x)"
+    async def fake_send_chain(session_id: str, chain: list, **kwargs):
+        calls.append(chain)
+        return SendResult(ok=True)
 
-    ob = DefaultMessageSender._degrade_markdown_for_platform(
-        list(markdown_components), "onebot"
-    )
-    assert "**" not in ob[0].text
-    assert "---" not in ob[0].text
-    assert "链接 (https://e.com/x)" in ob[0].text
+    sender = DefaultMessageSender()
+    monkeypatch.setattr(sender, "_send_chain", fake_send_chain)
+
+    for platform in ("telegram", "onebot", "qq_official", "weixin_oc", "lark"):
+        Plain.reset_mock()
+        calls.clear()
+        result = await sender.send_to_user(
+            SendRequest(
+                session_id=f"{platform}:UserMessage:1",
+                message="**标题**\n\n---\n\n正文 [链接](https://e.com/x)",
+            ),
+            context=MessageContext(platform_name=platform),
+        )
+        assert result.ok is True
+        assert calls, f"{platform} 应有发送"
+        assert "**标题**" in Plain.call_args.args[0], f"{platform} 应保留 Markdown"

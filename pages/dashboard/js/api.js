@@ -2,16 +2,30 @@
 
 import { requireBridge } from './bridge.js';
 
+function plainClone(value, seen = new Map()) {
+  // 递归复制为普通对象/数组：Vue reactive 状态是 Proxy，structuredClone /
+  // postMessage 无法克隆 Proxy（抛 "could not be cloned"）；这里改写后的普通
+  // 结构可克隆，同时保留 undefined 键与 Date 不被 JSON 往返改写。
+  if (value === null || typeof value !== 'object') return value;
+  if (value instanceof Date) return new Date(value.getTime());
+  if (seen.has(value)) return seen.get(value);
+  if (Array.isArray(value)) {
+    const out = [];
+    seen.set(value, out);
+    for (const item of value) out.push(plainClone(item, seen));
+    return out;
+  }
+  const out = {};
+  seen.set(value, out);
+  for (const key of Object.keys(value)) {
+    out[key] = plainClone(value[key], seen);
+  }
+  return out;
+}
+
 export function toBridgePayload(value) {
   if (value === undefined || value === null) return {};
-  // Vue reactive 状态是 Proxy，postMessage 结构化克隆会抛
-  // "could not be cloned"；JSON 归一化为普通对象再交给 bridge。
-  let plain;
-  try {
-    plain = JSON.parse(JSON.stringify(value));
-  } catch {
-    plain = value;
-  }
+  const plain = plainClone(value);
   if (typeof plain === 'object' && !Array.isArray(plain)) return plain;
   return { value: plain };
 }

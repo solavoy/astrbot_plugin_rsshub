@@ -25,7 +25,6 @@ from ....shared.constants import (
     TELEGRAM_PHOTO_MAX_BYTES,
 )
 from ...pipeline import MessageChainFormatter, MessageComponent
-from ...pipeline.markdown_plain import markdown_to_plain
 from ...utils import get_logger
 from ...utils.lock import locked
 from ...utils.media_type_detector import detect_media_file, detect_media_hint
@@ -767,33 +766,8 @@ class DefaultMessageSender:
             failed_urls=effective_failed_urls,
             platform=effective_platform,
         )
-        components = self._degrade_markdown_for_platform(components, effective_platform)
+        # 全部渠道统一按 Markdown 原文推送；不再在发送边界做纯文本降级。
         return self._attach_generated_fallbacks(components, request)
-
-    @classmethod
-    def _degrade_markdown_for_platform(
-        cls,
-        components: list[MessageComponent],
-        platform: str,
-    ) -> list[MessageComponent]:
-        """非 Markdown 渲染平台把规范 Markdown 正文降级为可读纯文本。
-
-        Telegram 原生渲染 MarkdownV2；其余平台（OneBot / QQ 官方 / 微信 /
-        默认 sender）在发送边界还原 Markdown 语法，避免原文直接暴露。
-        """
-        from ...pipeline.entry_formatter import EntryTextFormatter
-
-        if EntryTextFormatter.should_render_markdown(platform):
-            return components
-        degraded: list[MessageComponent] = []
-        for component in components:
-            if component.kind == "text" and component.text:
-                degraded.append(
-                    replace(component, text=markdown_to_plain(component.text))
-                )
-            else:
-                degraded.append(component)
-        return degraded
 
     @staticmethod
     def _is_media_component(component: MessageComponent) -> bool:
@@ -896,9 +870,8 @@ class DefaultMessageSender:
     def _resolve_use_markdown(
         self, context: MessageContext | None, platform: str
     ) -> bool:
-        from ...pipeline.entry_formatter import EntryTextFormatter
-
-        return EntryTextFormatter.should_render_markdown(platform)
+        # 全部渠道统一按 Markdown 原文推送；QQ 等受 `_resolve_use_markdown` 覆盖决定。
+        return True
 
     async def _maybe_degrade_before_send(
         self,

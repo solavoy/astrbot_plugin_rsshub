@@ -104,3 +104,17 @@ def test_markdown_to_plain_dedups_escaped_url_link_text():
     # MarkdownV2 转义（如 `.`）经反转义后文本仍等于 URL，同样去重。
     text = r"via [https://example\.com/posts/42](https://example\.com/posts/42)"
     assert markdown_to_plain(text) == "via https://example.com/posts/42"
+
+
+def test_markdown_to_plain_dedups_url_with_formatting_variants():
+    # 加粗/斜体包裹或尾部斜杠等格式差异不应让 `url (url)` 重复复发。
+    assert markdown_to_plain("[**https://example.com/a**](https://example.com/a)") == (
+        "https://example.com/a"
+    )
+    assert markdown_to_plain("[https://example.com/](https://example.com)") == (
+        "https://example.com/"
+    )
+    # 文本确实是文字而非 URL 时仍保留 `文本 (url)`。
+    assert markdown_to_plain("[*点击*](https://example.com/a)") == (
+        "点击 (https://example.com/a)"
+    )

@@ -590,75 +590,90 @@ class HTMLParser:
             return default
 
     @classmethod
-    def _is_non_content_image(cls, tag: Tag, url: str) -> bool:
-        """判断图片是否为非正文装饰图（站点 logo/头像/分享图标/二维码等）。
+    def _is_strong_class_token(cls, token: str) -> bool:
+        """class/id token 是否明显装饰性。
 
-        命中任一启发式即视为非内容图片，不进入媒体列表：
-        - URL 文件名含 logo/favicon/avatar/icon/share/qrcode/sprite/blank 等标记
-        - width 与 height 属性都存在且都 <= 48px（小图标 / 头像尺寸）
-        - 元素自身 class/id 含 logo/avatar/icon/share/header/footer/nav 等标记
-        - 祖先元素（至多 2 层）class/id 含 logo/avatar/icon/share/qrcode/brand 等标记
+        仅精确匹配或强前缀/后缀（`logo`、`site-logo`、`icon-*`），避免把
+        `article-icon`、`share-buttons` 等内容类作为文章主体的图片误判删除。
+        """
+        token = (token or "").strip().lower()
+        if not token:
+            return False
+        for marker in ("logo", "avatar", "favicon", "qrcode", "badge"):
+            if (
+                token == marker
+                or token.startswith(marker)
+                or token.endswith("-" + marker)
+            ):
+                return True
+        # 图标：仅 "icon" / "icon-*" 前缀（不以 -icon 结尾，保留 article-icon）。
+        if token == "icon" or token.startswith("icon"):
+            return True
+        return False
+
+    @classmethod
+    def _is_non_content_image(cls, tag: Tag, url: str) -> bool:
+        """判断图片是否为非正文装饰图（站点 logo/头像/图标/二维码等）。
+
+        精确优先，降低误删真实文章图的概率：
+        - URL 文件名含强标记（logo/favicon/avatar/qrcode/badge/spacer/1x1 等）
+        - URL 路径中**某个段恰好等于**装饰目录名（logo/avatar/favicon/qrcode 等）
+        - width 与 height 都存在且都 <= 24px（图标级小图）
+        - 元素自身或祖先（至多 2 层）class/id 的 token 命中强装饰标记
         """
         from urllib.parse import urlparse as _urlparse
 
-        path = (_urlparse(url).path or "").lower()
-        url_markers = (
+        parsed = _urlparse(url)
+        path = (parsed.path or "").lower()
+        filename = path.rsplit("/", 1)[-1]
+
+        filename_markers = (
             "logo",
             "favicon",
             "avatar",
-            "icon",
-            "share",
             "qrcode",
             "qr_code",
             "badge",
             "sprite",
             "spacer",
             "blank",
-            "pixel",
-            "tracker",
-            "beacon",
+            "placeholder",
+            "loading",
             "1x1",
         )
-        if any(marker in path for marker in url_markers):
+        if any(marker in filename for marker in filename_markers):
+            return True
+
+        segment_markers = {
+            "logo",
+            "logos",
+            "avatar",
+            "avatars",
+            "favicon",
+            "favicons",
+            "qrcode",
+            "qr_code",
+            "badge",
+            "sprites",
+        }
+        if any(seg in segment_markers for seg in path.split("/") if seg):
             return True
 
         width = cls._attr_int(tag, "width")
         height = cls._attr_int(tag, "height")
-        if width and height and width <= 48 and height <= 48:
+        if width and height and width <= 24 and height <= 24:
             return True
 
         cls_id = " ".join(
             filter(None, (cls._attr_str(tag, "class"), cls._attr_str(tag, "id")))
         ).lower()
-        element_markers = (
-            "logo",
-            "avatar",
-            "icon",
-            "share",
-            "qrcode",
-            "header",
-            "footer",
-            "nav",
-            "brand",
-            "banner",
-        )
-        if any(marker in cls_id for marker in element_markers):
+        if any(cls._is_strong_class_token(t) for t in cls_id.split()):
             return True
 
-        # 祖先容器标记（保留 header/footer/nav 外的常见装饰容器）。
         try:
             parents = tag.find_parents(limit=2)
         except (AttributeError, Exception):
             parents = []
-        ancestor_markers = (
-            "logo",
-            "avatar",
-            "icon",
-            "share",
-            "qrcode",
-            "brand",
-            "banner",
-        )
         for ancestor in parents:
             ancestor_cls = " ".join(
                 filter(
@@ -666,7 +681,7 @@ class HTMLParser:
                     (cls._attr_str(ancestor, "class"), cls._attr_str(ancestor, "id")),
                 )
             ).lower()
-            if any(marker in ancestor_cls for marker in ancestor_markers):
+            if any(cls._is_strong_class_token(t) for t in ancestor_cls.split()):
                 return True
         return False
 

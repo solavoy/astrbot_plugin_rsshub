@@ -10,9 +10,9 @@
 | 平台 / sender | 当前状态 | 明确覆盖点 | 备注 |
 | --- | --- | --- | --- |
 | OneBot / aiocqhttp | 专门 sender，明确测试覆盖 | 合并转发、原始顺序、媒体预下载、NapCat 流式上传、失败 fallback | NapCat 支持流式上传大文件，默认 fallback 模式（失败后重试）。 |
-| QQ Official | 专门 sender，明确测试覆盖 | 单图文本合链、多媒体拆发、Markdown 开关边界、媒体失败降级送达语义 | Markdown 必须走 AstrBot `MessageChain.use_markdown_`，不得绕过 core 手写 botpy payload。 |
-| Telegram | 专门 sender，明确测试覆盖 | Telegraph 多图路由、大图片转文件、MarkdownV2 文本边界 | 不假设插件能控制媒体 caption Markdown。 |
-| Weixin OC | 专门 sender，明确测试覆盖 | 顺序发送、不做图文合一 | 平台能力不适合强行合链。 |
+| QQ Official | 专门 sender，明确测试覆盖 | 文本 + 媒体单链发送、媒体数阈值降级、Markdown 开关、发送失败降级送达语义 | Markdown 必须走 AstrBot `MessageChain.use_markdown_`，不得绕过 core 手写 botpy payload。 |
+| Telegram | 专门 sender，明确测试覆盖 | Telegraph 多图路由、超大图转文件、MarkdownV2 文本边界 | 不假设插件能控制媒体 caption Markdown。 |
+| Weixin OC | 统一骨架（空壳子类） | 继承 `DefaultMessageSender` 单链发送，无专属覆盖 | 平台是否吞文本由适配器行为决定。 |
 | 其他 AstrBot 平台 | 默认 sender，未列入当前专门回归覆盖 | 基础 `Plain` / 媒体组件发送 | 默认发送者不做强平台特化，因此可能可用；新增平台专属行为前需要补对应测试。 |
 
 ## 通用推送契约
@@ -29,9 +29,9 @@
 | 平台 / sender | 文本与媒体顺序 | 媒体策略 | Markdown / Telegraph | 关键风险 |
 | --- | --- | --- | --- | --- |
 | OneBot / aiocqhttp | 统一模型：文本节点在前，媒体节点依次在后，合并转发 | 媒体预下载后使用本地文件；支持 NapCat 流式上传（disabled/fallback/always）；合并转发失败后回退纯文本 Nodes | 合并转发节点在能确认 bot QQ 号时写入该 `uin`；未知时保留 AstrBot SDK 的默认 `uin="0"`，不伪造账号 | 合并转发失败、媒体发送失败、媒体顺序回退。 |
-| QQ Official | 单图 + 文本合成一条 `Plain + Image`；视频和多媒体仍拆发 | 图片/视频先按平台媒体组件发送，失败后按内置策略降级；降级成功视为已送达 | `qq_official_strategy.markdown_mode=auto|force|plain` 语义保留；当前主动推送链路按 `should_render_markdown` 决定，非 Telegram 平台降级纯文本 | Markdown 原文暴露、媒体 + markdown payload 畸形、平台 `invalid content` 仍需实测区分体积与内容风控。 |
-| Telegram | 文本和媒体按 Telegram sender 策略发送 | 本地图片超过内置 photo 阈值时按文件发送 | Telegraph 是 Telegram sender 级自动路由，不是 `send_mode`；Plain 文本可走 AstrBot MarkdownV2 | Bot API photo 大小拒绝、caption Markdown 不一致。 |
-| Weixin OC | 始终逐条发送 | 不尝试图文合一 | 无 Telegraph / Markdown 承诺 | 强行图文合链会吞文本或失败。 |
+| QQ Official | 文本 + 媒体合成一条链（正文在前） | 媒体发送时刻失败后按内置策略降级（文件候选/链接文本），正文真实送达视为已送达 | `qq_official_strategy.markdown_mode=auto|force|plain` 语义保留；正文统一 Markdown 原文推送（不做纯文本降级），QQ `_use_markdown_for_context` 暂为兼容守卫 | Markdown 原文暴露、媒体 + markdown payload 畸形、平台 `invalid content` 仍需实测区分体积与内容风控。 |
+| Telegram | 文本 + 媒体一条链（正文在前） | 本地图片超过内置 photo 阈值时按文件发送 | Telegraph 是 Telegram sender 级自动路由，不是 `send_mode`；Plain 文本可走 AstrBot MarkdownV2 | Bot API photo 大小拒绝、caption Markdown 不一致。 |
+| Weixin OC | 统一单链发送（继承默认骨架） | 不做专属降级 | 无 Telegraph / Markdown 承诺 | 合并链若被平台拒发可能导致整条失败并补推。 |
 | 默认 sender | 尽量使用平台通用 MessageChain 组件 | 不做平台专属降级 | 依赖 AstrBot 平台默认能力 | 未明确覆盖的平台行为可能和专门 sender 不一致。 |
 
 ## 媒体上限参考
@@ -45,7 +45,7 @@
 | Telegram Bot API | `sendPhoto` 上传最大 10 MiB；HTTP URL photo 约 5 MiB | `sendAnimation` 最大 50 MiB | `sendVideo` 最大 50 MiB | `sendDocument` 最大 50 MiB | GIF 不走 photo，优先 animation；大静态图超 10 MiB 后按文件发送。 | Telegram 官方 Bot API 明确区分 photo、animation、video、document；Local Bot API Server 是例外，不作为默认阈值。 |
 | QQ 客户端 / OneBot 逆向实现参考 | NapCat 图片/GIF 未查到公开硬阈值；普通客户端大图也可能按文件链路发送 | NapCat GIF 未查到公开硬阈值；QQ 自定义表情和普通图片发送限制不是同一条链路 | NapCat 文档写视频 100 MiB，超过建议走群文件 | 离线文件单文件 4 GiB；非会员离线流量 2 GiB/天；在线直传、群文件和 NTQQ 实现会受客户端、账号、群空间和风控影响 | OneBot 可以把 QQ 用户文件能力作为 fallback 参考：媒体消息发不出时优先改走文件链路，而不是直接判失败。 | OneBot 是 QQ 协议逆向/适配层，实际能力接近 QQ 客户端链路，但每个实现接入的上传 API 不同。本文默认以 NapCat 表现评估 OneBot 风险；go-cqhttp 的图片 30 MiB、GIF 300 帧只保留为旧实现资料。 |
 | QQ Official | 官方未公开稳定上限；插件按 native image 10 MiB 软上限分流 | 官方未公开稳定上限；插件暂定 GIF 10 MiB | 官方未公开稳定上限；插件按 12 MiB 软上限分流 | `file_type=4` 当前按 12 MiB 软上限分流 | 图片 `<=10 MiB` 先 native；`>10 MiB && <=12 MiB` 走文件候选；`>12 MiB` 直接链接。视频 `<=12 MiB` 才尝试上传，超出直接链接。 | QQ Bot OpenAPI 文档未给出图片/GIF/视频统一大小上限；`file_data` JSON 会受 base64 放大和网关请求体限制影响。 |
-| Weixin OC / 微信系 | 企业微信临时素材 image 常见 10 MiB；普通会话大图可能转文件 | 普通企业微信会话 GIF 超 5 MiB 常转文件；API 图片素材通常不承诺 GIF | 企业微信临时素材 video 10 MiB | 企业微信临时素材 file 20 MiB | Weixin OC 保持逐条发送，不尝试复杂图文合链；超限由平台错误和降级文本暴露。 | 微信入口差异很大：企业微信应用消息、临时素材、普通会话、公众号素材不是同一套限制。 |
+| Weixin OC / 微信系 | 企业微信临时素材 image 常见 10 MiB；普通会话大图可能转文件 | 普通企业微信会话 GIF 超 5 MiB 常转文件；API 图片素材通常不承诺 GIF | 企业微信临时素材 video 10 MiB | 企业微信临时素材 file 20 MiB | Weixin OC 统一单链发送；超限由平台错误和降级文本暴露。 | 微信入口差异很大：企业微信应用消息、临时素材、普通会话、公众号素材不是同一套限制。 |
 
 这些数值统一按“软阈值”管理，只用于发送前分流、日志解释和降级判断，不应让正常可发送媒体被静默丢弃。软阈值不能被当作平台硬限制，也不能在数据层截断、丢弃或提前判定推送失败；真实发送失败仍应暴露平台错误，并进入可观测的降级链路。新增硬拒绝前必须有平台文档、稳定实测或用户配置作为依据。
 

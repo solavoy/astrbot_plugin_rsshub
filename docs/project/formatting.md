@@ -62,15 +62,14 @@
 
 核心规则：
 
-- 默认媒体优先于文本
+- 正文在前、媒体在后（固定顺序，不做配置）
 - onebot-like 平台把 `tail` 里的音频/文件也尽量放在媒体区
-- 文本主体统一放后面
 
 注意：`MessageComponentSorter` 只负责排序，不负责决定“一条消息拆成几次发送”。平台是否需要拆批发送属于 sender adapter 的职责。
 
 ## 统一发送模型
 
-所有内容先统一为规范 Markdown 正文 + 有序媒体集合。发送顺序固定为：正文 → 图片 → 视频 → 音频 → 文件。Telegram 原生渲染 MarkdownV2；其余平台由 sender 在发送边界把 Markdown 降级为可读纯文本。`style` 排版策略与 `original` 布局发送已移除。
+所有内容先统一为规范 Markdown 正文 + 有序媒体集合。发送顺序固定为：正文 → 图片 → 视频 → 音频 → 文件。全部渠道统一按 Markdown 原文推送（不做纯文本降级），由各适配器按其能力渲染。`style` 排版策略与 `original` 布局发送已移除。
 
 ## 表格图片语义
 
@@ -87,15 +86,13 @@ HTML `<table>` 解析时会先尝试走轻量转图链路：
 
 关闭 `media.cache_enabled` 时，表格图渲染为系统临时目录下的 `rsshub_table_*.png`，不写 digest cache 或 meta。sender 发送前会把 layout 上的一次性本地图复制成当次发送专用临时图，并通过 `PreparedMedia.owned_paths` 清理副本；共享 layout 原始临时图由 dispatcher、agent XML 推送或文本清洗调用方清理。外部传入的非 cache `local_path` 不会被自动接管。空表格、坏 HTML 或渲染异常会保留原有 `A | B | C` 文本 fallback，不阻断 RSS 推送。
 
-## 为什么 OneBot 维持“媒体在前，文本在后”
+## 统一单链发送顺序
 
-这是当前实际平台兼容性做出来的结果，不是抽象美感选择：
-
-- OneBot 合并转发对媒体节点放前面更稳定
-- 文本尾巴与 via 放后面更符合当前实际发送表现
-- 这也和插件现有历史表现保持一致
-
-因此项目明确把它作为兼容规则保留下来。
+所有平台（默认 / OneBot / Telegram / QQ Official / Weixin OC）共用
+`DefaultMessageSender.send_to_user` 统一骨架，组件顺序固定为 正文 → 媒体 → 尾，
+一条链，不做配置、不主动拆批。平台差异由钩子承担：Telegram Telegraph 自动分流与
+超大图转文件、OneBot 合并转发 / NapCat 流式、QQ Official 媒体数阈值降级 + 发送失败
+降级、markdown 开关。
 
 ## 失败链接追加策略
 
@@ -106,7 +103,7 @@ HTML `<table>` 解析时会先尝试走轻量转图链路：
 
 正常成功态不追加，避免正文被原始媒体链接污染。
 
-`qq_official` / `weixin_oc` 是平台特例：QQ Official 单图可与文本合发，视频和多媒体场景仍由 sender 拆批；Weixin OC 不支持图文同发，只能逐条发送。OneBot 合并转发失败后会回退为纯文本 Nodes。
+`qq_official` 在发送时刻失败时走 `_maybe_retry_after_failed_send`：为失败媒体尝试文件候选 / 链接文本降级，正文真实送达才算降级成功（返回 `ok=True`，避免轮询重复补推）；`weixin_oc` 继承统一骨架（单链），与其他平台一致。OneBot 合并转发失败后会回退为纯文本 Nodes。
 
 ## 标题去重边界
 

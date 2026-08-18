@@ -38,6 +38,7 @@ class PlatformName(str, Enum):
     ONEBOT = "aiocqhttp"
     QQ_OFFICIAL = "qq_official"
     WEIXIN_OC = "weixin_oc"
+    LARK = "lark"
 
 
 class PlatformAlias(str, Enum):
@@ -140,6 +141,7 @@ PLATFORM_ALIASES: dict[str, tuple[str, ...]] = {
     PlatformName.ONEBOT.value: PLATFORM_ONEBOT_ALIASES,
     PlatformName.QQ_OFFICIAL.value: PLATFORM_QQ_OFFICIAL_ALIASES,
     PlatformName.WEIXIN_OC.value: PLATFORM_WEIXIN_ALIASES,
+    PlatformName.LARK.value: ("feishu", "larksuite"),
 }
 
 ONEBOT_PLATFORMS = {PlatformName.ONEBOT.value, *PLATFORM_ONEBOT_ALIASES}
