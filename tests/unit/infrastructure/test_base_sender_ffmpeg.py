@@ -957,24 +957,6 @@ async def test_default_sender_keeps_external_prepared_owned_paths(
     assert owned.exists()
 
 
-def test_telegram_normalize_planned_media_preserves_owned_paths(tmp_path: Path):
-    large_image = tmp_path / "large.png"
-    large_image.write_bytes(b"x" * (11 * 1024 * 1024))
-    prepared = PreparedMedia(
-        media_type="image",
-        original_url="https://example.com/large.png",
-        local_path=large_image,
-        detected_suffix=".png",
-        owned_paths=[large_image],
-    )
-    prepared.ensure_primary_variant()
-
-    normalized = TelegramMessageSender._normalize_planned_media([prepared])
-
-    assert normalized[0].media_type == "file"
-    assert normalized[0].owned_paths == [large_image]
-
-
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "sender_cls,platform",

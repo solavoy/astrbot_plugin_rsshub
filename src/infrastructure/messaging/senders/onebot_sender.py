@@ -11,14 +11,14 @@ from typing import TYPE_CHECKING, Any
 
 from astrbot.api.message_components import Node, Nodes, Plain
 
-from ...pipeline.markdown_plain import markdown_to_plain
 from ...utils import get_logger
 from ..napcat_stream import upload_file_stream
 from .base_sender import DefaultMessageSender
 from .types import MessageContext, SendRequest, SendResult, get_bot_self_id
 
 if TYPE_CHECKING:
-    pass
+    from ...pipeline import MessageComponent
+    from .types import PreparedMedia
 
 logger = get_logger()
 
@@ -26,9 +26,10 @@ logger = get_logger()
 class OneBotMessageSender(DefaultMessageSender):
     """QQ OneBot 平台消息发送器
 
-    特性：
-    - 合并转发节点（Nodes）：文字 + 图片/视频/音频/文件各自一个节点
-    - 经典合并转发失败时回退为纯文本 Nodes；原始顺序排版不走合并转发
+    复用统一发送骨架，平台差异经钩子表达：合并转发始终走 `_maybe_route_alternate_channel`
+    （Nodes：文字 + 图片/视频/音频/文件各自一个节点；经典合并转发失败时回退为纯文本
+    Nodes；NapCat 流式上传 always/fallback 两种模式），URL-only/超限媒体经
+    `_apply_first_send_candidates` 候选改写降级为链接。
     """
 
     @staticmethod
@@ -116,164 +117,112 @@ class OneBotMessageSender(DefaultMessageSender):
             return Node(content=content, name=nickname, uin=bot_self_id)
         return Node(content=content, name=nickname)
 
-    async def send_to_user(
+    async def _maybe_route_alternate_channel(
         self,
         request: SendRequest,
-        context: MessageContext | None = None,
-    ) -> SendResult:
-        """发送合并转发消息到 QQ OneBot 用户
+        context: MessageContext | None,
+        prepared_media: list[PreparedMedia] | None,
+        components: list[MessageComponent],
+        *,
+        use_markdown: bool | None,
+    ) -> SendResult | None:
+        session_id = request.session_id
+        napcat_mode = self._napcat_stream_mode(context)
+        bot_client = self._resolve_bot_client(context)
+        bot_self_id = self._resolve_bot_self_id(context)
+        nickname = (
+            context.channel.title if context and context.channel.title else "RSSHub"
+        )
 
-        经典策略下每条消息/媒体各自一个 Node；失败后回退为纯文本 Nodes。
-        """
-        effective_prepared = None
-        cleanup_owned = request.prepared_media is None
-        try:
-            session_id = request.session_id
-            timeout = self._get_timeout_seconds()
-            proxy = self._get_proxy()
+        from astrbot.api.message_components import File, Image, Record, Video
 
-            effective_prepared = request.prepared_media
-            if effective_prepared is None and request.media:
-                effective_prepared = await self.prepare_media(
-                    request.media, timeout=timeout, proxy=proxy
-                )
-            effective_prepared = self._apply_generated_layout_local_paths(
-                request,
-                effective_prepared,
-                mark_owned=cleanup_owned,
-            )
-            prepared_media_by_url = {
-                pm.original_url: pm
-                for pm in (effective_prepared or [])
-                if pm.original_url
-            }
-
-            napcat_mode = self._napcat_stream_mode(context)
-
-            bot_client = self._resolve_bot_client(context)
-            bot_self_id = self._resolve_bot_self_id(context)
-
-            nickname = (
-                context.channel.title if context and context.channel.title else "RSSHub"
-            )
-
-            from astrbot.api.message_components import File, Image, Record, Video
-
-            components = self._build_components(
-                request,
-                effective_prepared,
-                context,
-                failed_urls=[],
-                platform="onebot",
-            )
-            components = self._apply_first_send_candidates(
-                components,
-                prepared_media_by_url,
-                platform="onebot",
-            )
-
-            nodes: list[Node] = []
-            for component in components:
-                node_content: list | None = None
-                if component.kind == "text":
-                    node_content = [Plain(component.text or "RSS update")]
-                elif component.kind == "media":
-                    match component.media_type:
-                        case "image":
-                            node_content = [Image(file=component.file)]
-                        case "video":
-                            node_content = [Video(file=component.file)]
-                elif component.kind == "tail":
-                    match component.media_type:
-                        case "audio":
-                            node_content = [Record(file=component.file, text="audio")]
-                        case "file":
-                            node_content = [
-                                File(
-                                    name=component.name or "attachment",
-                                    file=component.file,
-                                    url=component.original_url,
-                                )
-                            ]
-                if node_content:
-                    nodes.append(
-                        self._build_forward_node(node_content, nickname, bot_self_id)
-                    )
-
-            if not nodes and request.message:
+        nodes: list[Node] = []
+        for component in components:
+            node_content: list | None = None
+            if component.kind == "text":
+                node_content = [Plain(component.text or "RSS update")]
+            elif component.kind == "media":
+                match component.media_type:
+                    case "image":
+                        node_content = [Image(file=component.file)]
+                    case "video":
+                        node_content = [Video(file=component.file)]
+            elif component.kind == "tail":
+                match component.media_type:
+                    case "audio":
+                        node_content = [Record(file=component.file, text="audio")]
+                    case "file":
+                        node_content = [
+                            File(
+                                name=component.name or "attachment",
+                                file=component.file,
+                                url=component.original_url,
+                            )
+                        ]
+            if node_content:
                 nodes.append(
-                    self._build_forward_node(
-                        [Plain(request.message)], nickname, bot_self_id
-                    )
+                    self._build_forward_node(node_content, nickname, bot_self_id)
                 )
 
-            if not nodes:
-                return SendResult(ok=False, detail="empty_message")
-
-            # NapCat stream mode: always
-            if napcat_mode == "always" and bot_client is not None:
-                nodes = await self._stream_upload_nodes(bot_client, nodes)
-
-            result = await self._send_chain(session_id, [Nodes(nodes)])
-
-            # NapCat stream mode: fallback
-            if (
-                not result.ok
-                and napcat_mode == "fallback"
-                and bot_client is not None
-                and self._has_local_video_nodes(nodes)
-            ):
-                logger.warning(
-                    "OneBot send failed, trying NapCat stream fallback: session=%s",
-                    session_id,
+        if not nodes and request.message:
+            nodes.append(
+                self._build_forward_node(
+                    [Plain(request.message)], nickname, bot_self_id
                 )
-                streamed_nodes = await self._stream_upload_nodes(bot_client, nodes)
-                result = await self._send_chain(session_id, [Nodes(streamed_nodes)])
-
-            if not result.ok:
-                logger.warning(
-                    "OneBot merged-forward send failed, fallback to text-only: "
-                    "session=%s, detail=%s",
-                    session_id,
-                    result.detail,
-                )
-                failed_urls = self._formatter.collect_original_urls(
-                    effective_prepared or []
-                )
-                fallback_message = (
-                    self._message_with_all_generated_fallbacks(request) or "RSS update"
-                )
-                # OneBot 不渲染 Markdown：回退文本降级为纯文本。
-                fallback_message = markdown_to_plain(fallback_message)
-                fallback_text = self._append_failed_links(
-                    fallback_message,
-                    failed_urls,
-                )
-                fallback_nodes = [
-                    self._build_forward_node(
-                        [Plain(fallback_text or "RSS update")],
-                        nickname,
-                        bot_self_id,
-                    )
-                ]
-                return await self._send_chain(session_id, [Nodes(fallback_nodes)])
-            return result
-
-        except Exception as err:
-            logger.error(
-                "OneBot merged-forward send exception: session=%s, err=%s",
-                request.session_id,
-                err,
-                exc_info=True,
             )
-            return SendResult(
-                ok=False,
-                transient=self._is_transient_network_error(err),
-                detail=self._normalize_error_detail(str(err)),
+        if not nodes:
+            return SendResult(ok=False, detail="empty_message")
+
+        if napcat_mode == "always" and bot_client is not None:
+            nodes = await self._stream_upload_nodes(bot_client, nodes)
+        result = await self._send_chain(session_id, [Nodes(nodes)])
+
+        if (
+            not result.ok
+            and napcat_mode == "fallback"
+            and bot_client is not None
+            and self._has_local_video_nodes(nodes)
+        ):
+            logger.warning(
+                "OneBot send failed, trying NapCat stream fallback: session=%s",
+                session_id,
             )
-        finally:
-            if cleanup_owned:
-                self._cleanup_owned_paths(effective_prepared)
+            streamed_nodes = await self._stream_upload_nodes(bot_client, nodes)
+            result = await self._send_chain(session_id, [Nodes(streamed_nodes)])
+
+        if not result.ok:
+            logger.warning(
+                "OneBot merged-forward send failed, fallback to text-only: "
+                "session=%s, detail=%s",
+                session_id,
+                result.detail,
+            )
+            from ...pipeline.markdown_plain import markdown_to_plain
+
+            failed_urls = self._formatter.collect_original_urls(prepared_media or [])
+            fallback_message = (
+                self._message_with_all_generated_fallbacks(request) or "RSS update"
+            )
+            fallback_message = markdown_to_plain(fallback_message)
+            fallback_text = self._append_failed_links(fallback_message, failed_urls)
+            fallback_nodes = [
+                self._build_forward_node(
+                    [Plain(fallback_text or "RSS update")], nickname, bot_self_id
+                )
+            ]
+            return await self._send_chain(session_id, [Nodes(fallback_nodes)])
+        return result
+
+    def _apply_first_send_candidates(
+        self,
+        components: list[MessageComponent],
+        prepared_media_by_url: dict[str, PreparedMedia] | None,
+        *,
+        platform: str,
+    ) -> list[MessageComponent]:
+        return self._apply_media_send_candidates(
+            components, prepared_media_by_url, platform=platform
+        )
 
     async def _stream_upload_nodes(
         self, bot_client: Any, nodes: list[Node]

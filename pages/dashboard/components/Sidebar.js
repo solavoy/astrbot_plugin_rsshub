@@ -9,8 +9,18 @@ export const Sidebar = defineComponent({
       <div class="sidebar-title">RSSHub</div>
       <nav class="sidebar-nav">
         <div class="nav-group" v-for="group in navGroups" :key="group.label || 'root'">
-          <div v-if="group.label" class="nav-group-label">{{ group.label }}</div>
-          <div class="nav-group-items">
+          <button
+            v-if="group.label"
+            class="nav-group-label"
+            :class="{ 'is-collapsed': store.isGroupCollapsed(group.label) }"
+            :aria-expanded="!store.isGroupCollapsed(group.label)"
+            @click="store.toggleGroup(group.label)"
+            type="button"
+          >
+            <span>{{ group.label }}</span>
+            <span class="nav-group-chevron" aria-hidden="true">▾</span>
+          </button>
+          <div class="nav-group-items" v-show="!store.isGroupCollapsed(group.label)">
             <button
               v-for="item in group.items"
               :key="item.key"

@@ -6,7 +6,6 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 from ...config import get_config_manager
@@ -17,7 +16,8 @@ from .telegraph_client import TelegraphClient
 from .types import MessageContext, SendRequest, SendResult
 
 if TYPE_CHECKING:
-    pass
+    from ...pipeline import MessageComponent
+    from .types import PreparedMedia
 
 logger = get_logger()
 
@@ -26,7 +26,7 @@ class TelegramMessageSender(DefaultMessageSender):
     """Telegram 平台消息发送器
 
     特性：
-    - 媒体优先展示（caption = text）
+    - 正文在前、媒体在后（单条链，caption = 正文写在小链首，媒体随后）
     - 组件排序由 MessageChainFormatter 统一（platform="telegram"）
     """
 
@@ -69,71 +69,6 @@ class TelegramMessageSender(DefaultMessageSender):
         """
         render = bool(getattr(context, "render_markdown", False)) if context else False
         return True if render else None
-
-    @staticmethod
-    def _normalize_planned_media(prepared_media):
-        if not prepared_media:
-            return prepared_media
-        from ..media_send_planner import MediaSendPlanner
-
-        normalized = []
-        changed = False
-        for item in prepared_media:
-            if item.download_failed:
-                normalized.append(item)
-                continue
-
-            candidates = MediaSendPlanner.candidates_for(item, platform="telegram")
-            first = next(
-                (candidate for candidate in candidates if candidate.action != "link"),
-                None,
-            )
-            if first is None or not first.file:
-                normalized.append(item)
-                continue
-
-            if first.action == "media":
-                planned_path = Path(first.file) if "://" not in first.file else None
-                if first.media_type == item.media_type and (
-                    planned_path is None or planned_path == item.local_path
-                ):
-                    normalized.append(item)
-                    continue
-                normalized.append(item)
-                if planned_path is not None:
-                    normalized[-1] = type(item)(
-                        media_type=first.media_type,
-                        original_url=item.original_url,
-                        local_path=planned_path,
-                        download_failed=item.download_failed,
-                        oversize=item.oversize,
-                        detected_mime=item.detected_mime,
-                        detected_suffix=planned_path.suffix.lower(),
-                        detection_source=item.detection_source,
-                        generated=item.generated,
-                        variants=list(item.variants),
-                        owned_paths=list(item.owned_paths),
-                    )
-                    changed = True
-                continue
-
-            normalized.append(
-                type(item)(
-                    media_type="file",
-                    original_url=item.original_url,
-                    local_path=Path(first.file),
-                    download_failed=item.download_failed,
-                    oversize=item.oversize,
-                    detected_mime=item.detected_mime,
-                    detected_suffix=Path(first.file).suffix.lower(),
-                    detection_source=item.detection_source,
-                    generated=item.generated,
-                    variants=list(item.variants),
-                    owned_paths=list(item.owned_paths),
-                )
-            )
-            changed = True
-        return normalized if changed else prepared_media
 
     @classmethod
     def _should_use_telegraph(
@@ -244,95 +179,55 @@ class TelegramMessageSender(DefaultMessageSender):
             text = f"{text}\n\n{page_url}" if text else page_url
         return text
 
-    async def send_to_user(
+    async def _maybe_route_alternate_channel(
         self,
         request: SendRequest,
-        context: MessageContext | None = None,
-    ) -> SendResult:
-        """发送消息到 Telegram 用户
-
-        平台标记为 telegram，由 MessageChainFormatter 选择 Telegram 专属链式顺序。
-        """
-        effective_prepared = None
-        cleanup_owned = request.prepared_media is None
+        context: MessageContext | None,
+        prepared_media: list[PreparedMedia] | None,
+        components: list[MessageComponent],
+        *,
+        use_markdown: bool | None,
+    ) -> SendResult | None:
+        effective_prepared = prepared_media or []
+        use_telegraph, token, proxy = self._should_use_telegraph(
+            context, effective_prepared
+        )
+        if not use_telegraph:
+            return None
         try:
-            session_id = request.session_id
-            timeout = self._get_timeout_seconds()
-            proxy = self._get_proxy()
-
-            effective_prepared = request.prepared_media
-            if effective_prepared is None and request.media:
-                effective_prepared = await self.prepare_media(
-                    request.media, timeout=timeout, proxy=proxy
-                )
-            effective_prepared = self._apply_generated_layout_local_paths(
-                request,
-                effective_prepared,
-                mark_owned=cleanup_owned,
+            return await self._send_via_telegraph(
+                session_id=request.session_id,
+                request=request,
+                context=context,
+                prepared_media=effective_prepared,
+                token=token,
+                proxy=proxy,
             )
-            effective_prepared = self._normalize_planned_media(effective_prepared)
-
-            failed_urls: list[str] = []
-            if effective_prepared:
-                failed_urls = self._collect_failed_urls(effective_prepared)
-
-            use_telegraph, telegraph_token, telegraph_proxy = (
-                self._should_use_telegraph(
-                    context,
-                    effective_prepared,
-                )
-            )
-            if use_telegraph:
-                try:
-                    return await self._send_via_telegraph(
-                        session_id=session_id,
-                        request=request,
-                        context=context,
-                        prepared_media=effective_prepared,
-                        token=telegraph_token,
-                        proxy=telegraph_proxy,
-                    )
-                except Exception as err:
-                    logger.warning(
-                        "Telegram Telegraph fallback to native send: session=%s, error=%s",
-                        session_id,
-                        err,
-                    )
-
-            components = self._build_components(
-                request,
-                effective_prepared,
-                context,
-                failed_urls=failed_urls,
-                platform="telegram",
-            )
-            chain = self._formatter.build_chain_from_components(
-                components,
-                platform="telegram",
-            )
-
-            if not chain:
-                return SendResult(ok=False, detail="empty_message")
-
-            use_markdown = self._context_render_markdown(context)
-            result = await self._send_chain(session_id, chain, use_markdown=use_markdown)
-            if result.ok:
-                return result
-            return await self._retry_text_with_generated_fallbacks(
-                request,
-                result,
-                use_markdown=use_markdown,
-            )
-
         except Exception as err:
-            logger.error(
-                "Telegram send failed: session=%s, error=%s", request.session_id, err
+            logger.warning(
+                "Telegram Telegraph fallback to native send: session=%s, error=%s",
+                request.session_id,
+                err,
             )
-            return SendResult(
-                ok=False,
-                transient=self._is_transient_network_error(err),
-                detail=self._normalize_error_detail(str(err)),
-            )
-        finally:
-            if cleanup_owned:
-                self._cleanup_owned_paths(effective_prepared)
+            return None
+
+    def _resolve_use_markdown(
+        self, context: MessageContext | None, platform: str
+    ) -> bool:
+        return bool(self._context_render_markdown(context))
+
+    def _apply_first_send_candidates(
+        self,
+        components: list[MessageComponent],
+        prepared_media_by_url: dict[str, PreparedMedia] | None,
+        *,
+        platform: str,
+    ) -> list[MessageComponent]:
+        """发送前按平台策略把组件改写为第一个可发送候选。
+
+        Telegram 也走 MediaSendPlanner 候选改写：超出 photo 上限的本地媒体
+        会降级为 document/file 发送（原 Telegram 专属 `_normalize_planned_media` 行为）。
+        """
+        return self._apply_media_send_candidates(
+            components, prepared_media_by_url, platform="telegram"
+        )

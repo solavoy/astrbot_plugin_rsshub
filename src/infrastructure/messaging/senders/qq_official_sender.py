@@ -21,7 +21,7 @@ from .base_sender import DefaultMessageSender
 from .types import MessageContext, SendRequest, SendResult
 
 if TYPE_CHECKING:
-    pass
+    from .types import PreparedMedia
 
 
 class QQOfficialMessageSender(DefaultMessageSender):
@@ -30,105 +30,149 @@ class QQOfficialMessageSender(DefaultMessageSender):
     特性：
     - 主动推送临时统一纯文本
     - 组件排序由 MessageFormatter 统一
-    - 多媒体消息按媒体优先、文本最后拆分发送
+    - 复用统一发送骨架，平台差异经钩子表达：候选改写、阈值降级、Markdown 解析
     """
 
-    async def send_to_user(
+    def _apply_first_send_candidates(
+        self,
+        components: list[MessageComponent],
+        prepared_media_by_url: dict[str, PreparedMedia] | None,
+        *,
+        platform: str,
+    ) -> list[MessageComponent]:
+        return self._apply_media_send_candidates(
+            components, prepared_media_by_url, platform=platform
+        )
+
+    def _resolve_use_markdown(
+        self, context: MessageContext | None, platform: str
+    ) -> bool:
+        return bool(self._use_markdown_for_context(context))
+
+    async def _maybe_degrade_before_send(
         self,
         request: SendRequest,
-        context: MessageContext | None = None,
+        components: list[MessageComponent],
+        *,
+        use_markdown: bool | None,
+        platform: str,
+    ) -> SendResult | None:
+        # 阈值降级路径成功送达时返回 ok=True，即"QQ 官方降级送达视为成功，
+        # 不应触发轮询补推"——等价于已删除的
+        # DefaultMessageSender._counts_degraded_media_delivery_as_success 语义。
+        return await self._maybe_send_threshold_degrade(
+            request, components, use_markdown=use_markdown
+        )
+
+    async def _maybe_retry_after_failed_send(
+        self,
+        request: SendRequest,
+        failed_result: SendResult,
+        components: list[MessageComponent],
+        prepared_media_by_url: dict[str, PreparedMedia] | None,
+        *,
+        use_markdown: bool | None,
     ) -> SendResult:
-        """发送消息到 QQ 官方 Bot"""
-        prepared_media = None
-        cleanup_owned = request.prepared_media is None
-        try:
-            use_markdown = self._use_markdown_for_context(context)
-            prepared_media = await self._prepare_effective_media(request, context)
-            prepared_media_by_url = {
-                pm.original_url: pm for pm in (prepared_media or []) if pm.original_url
-            }
+        """统一骨架单链发送失败后的 QQ 官方降级重试。
 
-            components = self._build_components(
+        统一骨架把全部正文与媒体合成一条 chain 发送；若平台在发送时刻拒绝某个媒体，
+        整条 chain 大概率整体未送达。旧实现（已删除的 _send_components_media_first /
+        _counts_degraded_media_delivery_as_success）会在这种发送时刻失败时为每个媒体
+        尝试 _send_component_fallback_candidates（文件候选 → 原文链接文本），任一降级
+        送达成功即返回 ok=True——"QQ 官方降级送达视为成功"，避免轮询循环把已送达的
+        消息当作失败重复补推。此处经新钩子恢复该语义。
+
+        注意：这是"发送时刻失败"的降级，与 _maybe_degrade_before_send 的阈值预判降级
+        相互独立（默认阈值 0 不触发预判，但发送失败仍走这里）。
+        """
+        strategy = self._get_qq_official_degrade_strategy()
+        if strategy == QQ_OFFICIAL_DEGRADE_STRATEGY_FAIL:
+            return await self._retry_text_with_generated_fallbacks(
                 request,
-                prepared_media,
-                context,
-                platform="qq_official",
-            )
-            components = self._apply_first_send_candidates(
-                components,
-                prepared_media_by_url,
-                platform="qq_official",
-            )
-            has_media = any(self._is_media_component(item) for item in components)
-            if not has_media:
-                chain = self._chain_from_components(components)
-                if not chain:
-                    return SendResult(ok=False, detail="empty_message")
-                return await self._send_chain(
-                    request.session_id,
-                    chain,
-                    use_markdown=use_markdown,
-                )
-            threshold_result = await self._maybe_send_threshold_degrade(
-                request,
-                components,
+                failed_result,
                 use_markdown=use_markdown,
             )
-            if threshold_result is not None:
-                return threshold_result
-            if self._can_send_single_image_with_text(components):
-                chain = self._chain_from_components(components)
-                if not chain:
-                    return SendResult(ok=False, detail="empty_message")
-                result = await self._send_chain(
+
+        # 先走统一骨架原有的「生成媒体纯文本回退」（只作用于 layout 中带 fallback_text
+        # 的生成媒体）；未命中时原样返回 failed_result，再进入 QQ 文件/链接降级。
+        generated = await self._retry_text_with_generated_fallbacks(
+            request,
+            failed_result,
+            use_markdown=use_markdown,
+        )
+        if generated is not failed_result:
+            return generated
+
+        failures: list[SendResult] = [failed_result]
+        failed_urls: list[str] = []
+        degraded_delivery_ok = False
+
+        try_file_fallback = strategy == QQ_OFFICIAL_DEGRADE_STRATEGY_FILE_THEN_LINK
+        for component in components:
+            if not self._is_media_component(component):
+                continue
+            if try_file_fallback and self._media_has_remaining_fallback(
+                component, prepared_media_by_url
+            ):
+                fallback = await self._send_component_fallback_candidates(
                     request.session_id,
-                    chain,
-                    use_markdown=use_markdown,
-                )
-                if result.ok:
-                    return result
-                return await self._handle_single_image_text_failure(
-                    request,
-                    components,
-                    first_failure=result,
-                    use_markdown=use_markdown,
+                    component,
                     prepared_media_by_url=prepared_media_by_url,
-                )
-            if self._single_video_component(components) is not None:
-                return await self._send_single_video_then_fallback(
-                    request,
-                    components,
+                    platform="qq_official",
+                    skip_first_file=component.file,
                     use_markdown=use_markdown,
-                    prepared_media_by_url=prepared_media_by_url,
                 )
-            return await self._send_components_media_first(
-                request.session_id,
-                components,
-                default_text=request.message,
-                use_markdown=use_markdown,
-                prepared_media_by_url=prepared_media_by_url,
+                failures.extend(fallback.failures)
+                if fallback.ok:
+                    degraded_delivery_ok = True
+                    continue
+            # 无法（或未）降级为文件候选的媒体：折入正文链接文本
+            self._record_failed_url(failed_urls, component)
+
+        # 重新送出正文（含失败媒体链接）；正文可送达也算降级送达成功
+        text_result = await self._send_failed_media_links_text(
+            request,
+            components,
+            failed_urls,
+            use_markdown=use_markdown,
+        )
+        if text_result.ok:
+            degraded_delivery_ok = True
+        else:
+            failures.append(self._result_with_stage(text_result, "degrade_text"))
+
+        if degraded_delivery_ok:
+            return SendResult(ok=True)
+        return self._partial_send_result(failures)
+
+    def _media_has_remaining_fallback(
+        self,
+        component: MessageComponent,
+        prepared_media_by_url: dict[str, PreparedMedia] | None,
+    ) -> bool:
+        """该媒体在已发送的首候选之外是否还有可尝试的兜底候选。"""
+        from ..media_send_planner import MediaSendPlanner
+
+        prepared = (
+            prepared_media_by_url.get(component.original_url)
+            if prepared_media_by_url and component.original_url
+            else None
+        )
+        if prepared is not None:
+            candidates = MediaSendPlanner.candidates_for(
+                prepared,
                 platform="qq_official",
             )
-        except Exception as err:
-            return SendResult(
-                ok=False,
-                transient=self._is_transient_network_error(err),
-                detail=self._stage_error_detail("qq_official_send", str(err)),
+        else:
+            candidates = [self._component_to_file_candidate(component)]
+        return any(
+            candidate.action != "link"
+            and not self._should_skip_fallback_candidate(
+                candidate,
+                component,
+                skip_first_file=component.file,
             )
-        finally:
-            if cleanup_owned:
-                self._cleanup_owned_paths(prepared_media)
-
-    @staticmethod
-    def _can_send_single_image_with_text(components) -> bool:
-        media = [item for item in components if item.kind == "media"]
-        tails = [item for item in components if item.kind == "tail"]
-        texts = [item for item in components if item.kind == "text" and item.text]
-        return (
-            len(media) == 1
-            and media[0].media_type == "image"
-            and not tails
-            and len(texts) == 1
+            for candidate in candidates
         )
 
     def _should_degrade_for_media_count(
@@ -140,75 +184,6 @@ class QQOfficialMessageSender(DefaultMessageSender):
             return False
         media_count = sum(1 for item in components if self._is_media_component(item))
         return media_count > threshold
-
-    def _single_video_component(
-        self,
-        components: list[MessageComponent],
-    ) -> MessageComponent | None:
-        media_components = [
-            item for item in components if self._is_media_component(item)
-        ]
-        if (
-            len(media_components) == 1
-            and media_components[0].kind == "media"
-            and media_components[0].media_type == "video"
-        ):
-            return media_components[0]
-        return None
-
-    async def _send_single_video_then_fallback(
-        self,
-        request: SendRequest,
-        components: list[MessageComponent],
-        *,
-        use_markdown: bool | None = None,
-        prepared_media_by_url: dict | None = None,
-    ) -> SendResult:
-        video_component = self._single_video_component(components)
-        if video_component is None:
-            return await self._send_components_media_first(
-                request.session_id,
-                components,
-                default_text=request.message,
-                use_markdown=use_markdown,
-                prepared_media_by_url=prepared_media_by_url,
-                platform="qq_official",
-            )
-
-        chain = self._component_to_chain(video_component)
-        if not chain:
-            return SendResult(ok=False, detail="empty_message")
-
-        video_result = await self._send_chain(
-            request.session_id,
-            chain,
-            use_markdown=use_markdown,
-        )
-        if not video_result.ok:
-            return await self._handle_single_video_failure(
-                request,
-                components,
-                video_component=video_component,
-                first_failure=video_result,
-                use_markdown=use_markdown,
-                prepared_media_by_url=prepared_media_by_url,
-            )
-
-        failures: list[SendResult] = []
-        text = "\n".join(
-            item.text for item in components if item.kind == "text" and item.text
-        ).strip()
-        if text:
-            from astrbot.api.message_components import Plain
-
-            text_result = await self._send_chain(
-                request.session_id,
-                [Plain(text)],
-                use_markdown=use_markdown,
-            )
-            if not text_result.ok:
-                failures.append(self._result_with_stage(text_result, "send_text"))
-        return self._partial_send_result(failures)
 
     async def _maybe_send_threshold_degrade(
         self,
@@ -245,113 +220,6 @@ class QQOfficialMessageSender(DefaultMessageSender):
                 use_markdown=use_markdown,
             )
         return None
-
-    async def _handle_single_image_text_failure(
-        self,
-        request: SendRequest,
-        components: list[MessageComponent],
-        *,
-        first_failure: SendResult,
-        use_markdown: bool | None = None,
-        prepared_media_by_url: dict | None = None,
-    ) -> SendResult:
-        image_component = next(
-            item
-            for item in components
-            if item.kind == "media" and item.media_type == "image"
-        )
-        strategy = self._get_qq_official_degrade_strategy()
-        if strategy == QQ_OFFICIAL_DEGRADE_STRATEGY_FAIL:
-            return self._result_with_stage(first_failure, "send_image_text")
-
-        failures = [self._result_with_stage(first_failure, "send_image_text")]
-        if strategy == QQ_OFFICIAL_DEGRADE_STRATEGY_FILE_THEN_LINK:
-            fallback = await self._send_component_fallback_candidates(
-                request.session_id,
-                image_component,
-                prepared_media_by_url=prepared_media_by_url,
-                platform="qq_official",
-                skip_first_file=image_component.file,
-                use_markdown=use_markdown,
-            )
-            failures.extend(fallback.failures)
-            if fallback.ok:
-                text_result = await self._send_failed_media_links_text(
-                    request,
-                    components,
-                    [],
-                    use_markdown=use_markdown,
-                )
-                if not text_result.ok:
-                    failures.append(
-                        self._result_with_stage(text_result, "degrade_text")
-                    )
-                    return self._partial_send_result(failures)
-                return SendResult(ok=True)
-
-        text_result = await self._send_failed_media_links_text(
-            request,
-            components,
-            [image_component.original_url],
-            use_markdown=use_markdown,
-        )
-        if not text_result.ok:
-            failures.append(self._result_with_stage(text_result, "degrade_text"))
-            return self._partial_send_result(failures)
-        return SendResult(ok=True)
-
-    async def _handle_single_video_failure(
-        self,
-        request: SendRequest,
-        components: list[MessageComponent],
-        *,
-        video_component: MessageComponent,
-        first_failure: SendResult,
-        use_markdown: bool | None = None,
-        prepared_media_by_url: dict | None = None,
-    ) -> SendResult:
-        strategy = self._get_qq_official_degrade_strategy()
-        if strategy == QQ_OFFICIAL_DEGRADE_STRATEGY_FAIL:
-            return self._result_with_stage(first_failure, "send_video")
-
-        failures = [self._result_with_stage(first_failure, "send_video")]
-        failed_urls: list[str] = []
-
-        if strategy == QQ_OFFICIAL_DEGRADE_STRATEGY_FILE_THEN_LINK:
-            fallback = await self._send_component_fallback_candidates(
-                request.session_id,
-                video_component,
-                prepared_media_by_url=prepared_media_by_url,
-                platform="qq_official",
-                skip_first_file=video_component.file,
-                use_markdown=use_markdown,
-            )
-            failures.extend(fallback.failures)
-            if fallback.ok:
-                text_result = await self._send_failed_media_links_text(
-                    request,
-                    components,
-                    [],
-                    use_markdown=use_markdown,
-                )
-                if not text_result.ok:
-                    failures.append(
-                        self._result_with_stage(text_result, "degrade_text")
-                    )
-                    return self._partial_send_result(failures)
-                return SendResult(ok=True)
-
-        self._record_failed_url(failed_urls, video_component)
-        text_result = await self._send_failed_media_links_text(
-            request,
-            components,
-            failed_urls,
-            use_markdown=use_markdown,
-        )
-        if not text_result.ok:
-            failures.append(self._result_with_stage(text_result, "degrade_text"))
-            return self._partial_send_result(failures)
-        return SendResult(ok=True)
 
     async def _send_link_only_degrade(
         self,

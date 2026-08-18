@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+from astrbot.api.message_components import Plain
 from astrbot_plugin_rsshub.src.application.services.html_parser import HTMLParser
 from astrbot_plugin_rsshub.src.domain.entities.content_types import (
     FileContent,
@@ -17,15 +18,13 @@ from astrbot_plugin_rsshub.src.infrastructure.pipeline import (
     EntryOutputFormat,
     EntryTextFormatter,
     MessageChainFormatter,
+    MessageComponent,
     MessageComponentSorter,
-    MessageChainFormatter,
 )
 from astrbot_plugin_rsshub.src.infrastructure.rendering import (
     TableImageRenderer,
     TableImageRenderResult,
 )
-
-from astrbot.api.message_components import Plain
 
 
 @pytest.mark.asyncio
@@ -217,6 +216,54 @@ def test_telegram_chain_does_not_truncate_caption_text():
 
     assert len(chain) == 2
     assert Plain.call_args.args[0] == text
+
+
+@pytest.mark.parametrize(
+    "platform", ["", "telegram", "onebot", "qq_official", "weixin_oc"]
+)
+def test_build_chain_orders_text_before_media_for_all_platforms(platform):
+    # 正文在上、媒体在下：所有平台链应为 [Plain(正文), Image, ...]。
+    from astrbot.api.message_components import Image, Plain
+
+    Plain.reset_mock()
+    formatter = MessageChainFormatter()
+    components = formatter.build_components(
+        prepared_media=[
+            PreparedMedia(
+                media_type="image",
+                original_url="https://example.com/a.jpg",
+                local_path="/tmp/a.jpg",
+                download_failed=False,
+            )
+        ],
+        text="文章正文",
+        failed_urls=[],
+        platform=platform,
+    )
+    chain = formatter.build_chain_from_components(components, platform=platform)
+
+    assert len(chain) == 2
+    assert chain[0] is Plain.return_value
+    assert chain[1] is Image.return_value
+    assert Plain.call_args.args[0] == "文章正文"
+
+
+def test_build_chain_places_tails_after_media():
+    # 统一组链：sorter 已保证 正文 → 媒体 → 尾，链应保持 [Plain, Image, File]。
+    # 测试环境中 astrbot.api.message_components 被 mock，故用 return_value 同一性断言。
+    from astrbot.api.message_components import File, Image, Plain
+
+    formatter = MessageChainFormatter()
+    components = [
+        MessageComponent(kind="text", text="正文"),
+        MessageComponent(kind="media", media_type="image", file="/tmp/a.jpg"),
+        MessageComponent(kind="tail", media_type="file", file="/tmp/a.zip"),
+    ]
+    chain = formatter.build_chain_from_components(components, platform="telegram")
+    assert len(chain) == 3
+    assert chain[0] is Plain.return_value
+    assert chain[1] is Image.return_value
+    assert chain[2] is File.return_value
 
 
 def test_message_component_sorter_orders_text_before_media_for_onebot():

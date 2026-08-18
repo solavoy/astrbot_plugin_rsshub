@@ -182,6 +182,9 @@ class HTMLParser:
                     and not url.lower().endswith((".gif", ".webm", ".mp4", ".m4v"))
                 ):
                     return TextContent(text=alt)
+                if self._is_non_content_image(tag, url):
+                    # 非正文装饰图片（站点 logo/头像/分享图标/二维码等）不进媒体列表。
+                    return None
                 img = ImageContent(url=url, alt=alt)
                 self._append_media(img)
                 return img
@@ -578,6 +581,94 @@ class HTMLParser:
             if value:
                 return value
         return ""
+
+    @classmethod
+    def _attr_int(cls, tag: Tag, key: str, default: int = 0) -> int:
+        try:
+            return int(cls._attr_str(tag, key))
+        except (TypeError, ValueError):
+            return default
+
+    @classmethod
+    def _is_non_content_image(cls, tag: Tag, url: str) -> bool:
+        """判断图片是否为非正文装饰图（站点 logo/头像/分享图标/二维码等）。
+
+        命中任一启发式即视为非内容图片，不进入媒体列表：
+        - URL 文件名含 logo/favicon/avatar/icon/share/qrcode/sprite/blank 等标记
+        - width 与 height 属性都存在且都 <= 48px（小图标 / 头像尺寸）
+        - 元素自身 class/id 含 logo/avatar/icon/share/header/footer/nav 等标记
+        - 祖先元素（至多 2 层）class/id 含 logo/avatar/icon/share/qrcode/brand 等标记
+        """
+        from urllib.parse import urlparse as _urlparse
+
+        path = (_urlparse(url).path or "").lower()
+        url_markers = (
+            "logo",
+            "favicon",
+            "avatar",
+            "icon",
+            "share",
+            "qrcode",
+            "qr_code",
+            "badge",
+            "sprite",
+            "spacer",
+            "blank",
+            "pixel",
+            "tracker",
+            "beacon",
+            "1x1",
+        )
+        if any(marker in path for marker in url_markers):
+            return True
+
+        width = cls._attr_int(tag, "width")
+        height = cls._attr_int(tag, "height")
+        if width and height and width <= 48 and height <= 48:
+            return True
+
+        cls_id = " ".join(
+            filter(None, (cls._attr_str(tag, "class"), cls._attr_str(tag, "id")))
+        ).lower()
+        element_markers = (
+            "logo",
+            "avatar",
+            "icon",
+            "share",
+            "qrcode",
+            "header",
+            "footer",
+            "nav",
+            "brand",
+            "banner",
+        )
+        if any(marker in cls_id for marker in element_markers):
+            return True
+
+        # 祖先容器标记（保留 header/footer/nav 外的常见装饰容器）。
+        try:
+            parents = tag.find_parents(limit=2)
+        except (AttributeError, Exception):
+            parents = []
+        ancestor_markers = (
+            "logo",
+            "avatar",
+            "icon",
+            "share",
+            "qrcode",
+            "brand",
+            "banner",
+        )
+        for ancestor in parents:
+            ancestor_cls = " ".join(
+                filter(
+                    None,
+                    (cls._attr_str(ancestor, "class"), cls._attr_str(ancestor, "id")),
+                )
+            ).lower()
+            if any(marker in ancestor_cls for marker in ancestor_markers):
+                return True
+        return False
 
 
 async def parse_html(html: str, feed_link: str | None = None) -> ParsedResult:

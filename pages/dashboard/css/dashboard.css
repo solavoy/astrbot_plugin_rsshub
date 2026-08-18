@@ -21,12 +21,37 @@
 .sidebar-nav { display: grid; gap: 18px; }
 .nav-group { display: grid; gap: 4px; }
 .nav-group-label {
-  padding: 0 10px 4px;
+  width: 100%;
+  min-height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 5px 10px;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
   font-size: 11px;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: var(--text-tertiary);
+  text-align: left;
+  transition: color var(--transition);
+}
+.nav-group-label:hover,
+.nav-group-label:focus-visible {
+  color: var(--text-secondary);
+  outline: 0;
+}
+.nav-group-chevron {
+  flex: 0 0 auto;
+  font-size: 10px;
+  line-height: 1;
+  transition: transform var(--transition);
+}
+.nav-group-label.is-collapsed .nav-group-chevron {
+  transform: rotate(-90deg);
 }
 .nav-group-items { display: grid; gap: 2px; }
 .nav-item {
@@ -453,7 +478,8 @@ textarea.select-input { resize: vertical; line-height: 1.5; }
   .sidebar-nav { display: flex; gap: 8px; min-width: max-content; }
   .nav-group { display: contents; }
   .nav-group-label { display: none; }
-  .nav-group-items { display: flex; gap: 4px; }
+  /* 移动端始终展开所有分组：v-show 的内联 display:none 被 !important 覆盖 */
+  .nav-group-items { display: flex !important; gap: 4px; }
   .nav-item { flex: 0 0 auto; width: auto; min-height: 34px; padding: 7px 12px; white-space: nowrap; }
   .dashboard-main { min-height: auto; display: block; }
   .compact-filter-toolbar { margin-bottom: 12px; }

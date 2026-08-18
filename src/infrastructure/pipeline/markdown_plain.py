@@ -5,11 +5,11 @@
 
 转换规则：
 - 去除 `**粗体**`、`*斜体*`、`` `行内代码` `` 标记
-- `[文本](url)` → `文本 (url)`
+- `[文本](url)` → `文本 (url)`；链接文本即 URL 时只保留一份（避免 `url (url)` 重复）
 - `# 标题` → `标题`
 - `---` 水平线 → `——`
 - 引用块 `>`、代码围栏 ``` 还原为普通文本
-- 反转义 `\*` `\_` 等 MarkdownV2 特殊字符转义
+- 反转义 `\\*` `\\_` 等 MarkdownV2 特殊字符转义
 """
 
 from __future__ import annotations
@@ -40,6 +40,15 @@ def _fence_repl(match: re.Match[str]) -> str:
     return block.strip("\n")
 
 
+def _link_repl(match: re.Match[str]) -> str:
+    """``[文本](url)`` → ``文本 (url)``；链接文本即 URL 时只保留一份。"""
+    text_part = match.group(1)
+    url_part = match.group(2)
+    if text_part.strip() == url_part.strip():
+        return text_part
+    return f"{text_part} ({url_part})"
+
+
 def markdown_to_plain(value: str | None) -> str:
     """把规范 Markdown 文本降级为可读纯文本。"""
     text = str(value or "")
@@ -49,7 +58,7 @@ def markdown_to_plain(value: str | None) -> str:
     text = _ESCAPE.sub(r"\1", text)
     text = _FENCE.sub(_fence_repl, text)
     text = _INLINE_CODE.sub(r"\1", text)
-    text = _INLINE_LINK.sub(lambda m: f"{m.group(1)} ({m.group(2)})", text)
+    text = _INLINE_LINK.sub(_link_repl, text)
     text = _INLINE_STRONG.sub(r"\1", text)
     text = _INLINE_EM.sub(r"\1", text)
     text = _ATX_HEADING.sub(r"\2", text)

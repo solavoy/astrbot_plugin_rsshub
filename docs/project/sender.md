@@ -68,15 +68,14 @@ provider 会同时解析 sender strategy：
 
 ### QQ Official / Weixin OC 顺序发送
 
-`qq_official` 和 `weixin_oc` 不再统一走默认整条 chain 策略。它们在 sender adapter 内部按平台能力处理：
+`qq_official` 与 `weixin_oc` 已并入统一发送骨架（`DefaultMessageSender.send_to_user`），与其他平台一样把全部正文与媒体合成「正文 → 媒体 → 尾」一条 chain 发送，不再有媒体优先、文本最后拆发的旧链路。平台差异改为在统一骨架上通过钩子表达：
 
-- QQ Official 单图 + 文本合成一条 `Plain + Image`。
-- QQ Official 视频/多媒体仍按媒体优先、文本最后拆发。
-- Weixin OC 始终逐条发送，不合并图文。
+- QQ Official 仍是唯一自带媒体数量阈值降级的平台：当媒体组件数超过 `qq_official_media_threshold` 时，`_maybe_degrade_before_send` 按策略走文件/链接降级，降级成功视为已送达（返回 `ok=True`）；`markdown_mode` 运行时开关保留在该 sender 的 `_resolve_use_markdown` 钩子。
+- Weixin OC 无额外钩子，直接继承 `DefaultMessageSender` 全部行为。
 
-这样做是为了避开平台对多媒体图文链的吞文本问题，同时保留 QQ Official 单图图文链的可读性。
+统一骨架单链发送失败时默认仍返回 `SendResult.ok=False`，`transient` / `needs_rebind` 由失败结果聚合，`detail` 带有失败阶段语义。下载失败的媒体 URL 由统一组件过滤器折入正文：`MessageComponentSorter.append_failed_links` 只追加失败媒体的原始链接、不追加成功媒体链接。
 
-如果中途某个媒体失败，sender 不会立刻停止，而是继续发送剩余媒体和最终文本。默认 partial 失败仍返回 `SendResult.ok=False`，`transient` / `needs_rebind` 聚合所有失败结果，`detail` 带有 `partial send` 语义。QQ Official 是例外：当失败媒体已经通过文件候选或原始链接文本完成降级送达时，返回 `ok=True`，避免轮询把已送达内容当失败反复补推。最终文本只追加失败媒体的原始链接，不追加成功媒体链接。
+QQ Official 是例外：当媒体在**发送时刻**被平台拒绝（整条 chain 发送 `ok=False`，而非阈值预判路径）时，该 sender 的 `_maybe_retry_after_failed_send` 后置发送降级钩子会把失败媒体逐项尝试 `_send_component_fallback_candidates`（文件候选 → 原文链接文本），并重新送出正文（含失败链接）；任一降级送达成功即返回 `ok=True`。"降级送达视为成功"避免轮询把已送达内容当失败反复补推——该语义等价于已删除的 `_counts_degraded_media_delivery_as_success`，现在经该后置钩子在 QQ 官方实现，仅作用于发送时刻失败，与阈值预判路径（`_maybe_degrade_before_send`）相互独立。
 
 ### Markdown 文本发送
 

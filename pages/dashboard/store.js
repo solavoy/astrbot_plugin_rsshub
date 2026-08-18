@@ -43,6 +43,7 @@ const PAGE_TITLES = {
 export const store = reactive({
   activeTab: 'overview',
   isDark: false,
+  collapsedGroups: [],
   loading: false,
   toast: { show: false, message: '', type: 'info' },
   confirm: { show: false, title: '', message: '', okText: '确定', okClass: 'btn btn-danger', resolve: null },
@@ -53,6 +54,17 @@ export const store = reactive({
 
   openTab(tab) {
     this.activeTab = tab;
+  },
+
+  // 侧边栏分组折叠状态（sandbox iframe 无 localStorage，仅会话内生效）
+  isGroupCollapsed(label) {
+    return label ? this.collapsedGroups.includes(label) : false;
+  },
+  toggleGroup(label) {
+    if (!label) return;
+    const idx = this.collapsedGroups.indexOf(label);
+    if (idx >= 0) this.collapsedGroups.splice(idx, 1);
+    else this.collapsedGroups.push(label);
   },
 
   toggleTheme() {

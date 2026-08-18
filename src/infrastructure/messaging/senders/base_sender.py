@@ -22,7 +22,6 @@ from ....shared.constants import (
     QQ_OFFICIAL_DEGRADE_STRATEGY_DEFAULT,
     QQ_OFFICIAL_DEGRADE_STRATEGY_OPTIONS,
     QQ_OFFICIAL_MEDIA_THRESHOLD_DEFAULT,
-    QQ_OFFICIAL_PLATFORMS,
     TELEGRAM_PHOTO_MAX_BYTES,
 )
 from ...pipeline import MessageChainFormatter, MessageComponent
@@ -484,9 +483,7 @@ class DefaultMessageSender:
                 (
                     local_path,
                     transcode_owned,
-                ) = await self._maybe_transcode_video_to_mp4(
-                    prepared_item.local_path
-                )
+                ) = await self._maybe_transcode_video_to_mp4(prepared_item.local_path)
                 if local_path != prepared_item.local_path:
                     detection = detect_media_file(local_path)
                     prepared_item.local_path = local_path
@@ -757,7 +754,9 @@ class DefaultMessageSender:
             else self._collect_failed_urls(prepared_media or [])
         )
         effective_platform = (
-            platform if platform is not None else (context.platform_name if context else "")
+            platform
+            if platform is not None
+            else (context.platform_name if context else "")
         )
         components = self._formatter.build_components(
             prepared_media=prepared_media,
@@ -789,7 +788,9 @@ class DefaultMessageSender:
         degraded: list[MessageComponent] = []
         for component in components:
             if component.kind == "text" and component.text:
-                degraded.append(replace(component, text=markdown_to_plain(component.text)))
+                degraded.append(
+                    replace(component, text=markdown_to_plain(component.text))
+                )
             else:
                 degraded.append(component)
         return degraded
@@ -831,7 +832,7 @@ class DefaultMessageSender:
             stage="send_file",
         )
 
-    def _apply_first_send_candidates(
+    def _apply_media_send_candidates(
         self,
         components: list[MessageComponent],
         prepared_media_by_url: dict[str, PreparedMedia] | None,
@@ -882,6 +883,73 @@ class DefaultMessageSender:
             )
         return rewritten
 
+    def _apply_first_send_candidates(
+        self,
+        components: list[MessageComponent],
+        prepared_media_by_url: dict[str, PreparedMedia] | None,
+        *,
+        platform: str,
+    ) -> list[MessageComponent]:
+        """平台钩子：默认不做候选改写；QQ 官方 / OneBot 覆盖为 _apply_media_send_candidates。"""
+        return components
+
+    def _resolve_use_markdown(
+        self, context: MessageContext | None, platform: str
+    ) -> bool:
+        from ...pipeline.entry_formatter import EntryTextFormatter
+
+        return EntryTextFormatter.should_render_markdown(platform)
+
+    async def _maybe_degrade_before_send(
+        self,
+        request: SendRequest,
+        components: list[MessageComponent],
+        *,
+        use_markdown: bool | None,
+        platform: str,
+    ) -> SendResult | None:
+        """平台钩子：默认不降级；QQ 官方覆盖为媒体数阈值降级。"""
+        return None
+
+    async def _maybe_route_alternate_channel(
+        self,
+        request: SendRequest,
+        context: MessageContext | None,
+        prepared_media: list[PreparedMedia] | None,
+        components: list[MessageComponent],
+        *,
+        use_markdown: bool | None,
+    ) -> SendResult | None:
+        """平台钩子：默认走普通链；Telegram（Telegraph）/ OneBot（合并转发）覆盖。"""
+        return None
+
+    async def _maybe_retry_after_failed_send(
+        self,
+        request: SendRequest,
+        failed_result: SendResult,
+        components: list[MessageComponent],
+        prepared_media_by_url: dict[str, PreparedMedia] | None,
+        *,
+        use_markdown: bool | None,
+    ) -> SendResult:
+        """平台钩子：单链发送失败后的重试/降级。默认仅做生成媒体的纯文本回退，
+
+        等价于旧骨架的直接 `_retry_text_with_generated_fallbacks` 调用；
+        QQ 官方覆盖为文件候选/原文链接文本的发送时刻降级送达。
+        """
+        return await self._retry_text_with_generated_fallbacks(
+            request, failed_result, use_markdown=use_markdown
+        )
+
+    def _build_delivery_payload(
+        self,
+        components: list[MessageComponent],
+        platform: str,
+    ) -> list:
+        return self._formatter.build_chain_from_components(
+            components, platform=platform
+        )
+
     def _append_link_only_urls_to_components(
         self,
         components: list[MessageComponent],
@@ -927,6 +995,24 @@ class DefaultMessageSender:
             return SendResult(ok=False, detail="empty_candidate")
         return await self._send_chain(session_id, chain, use_markdown=use_markdown)
 
+    @staticmethod
+    def _should_skip_fallback_candidate(
+        candidate,
+        component: MessageComponent,
+        *,
+        skip_first_file: str = "",
+    ) -> bool:
+        """兜底候选若与发送链中已尝试的首候选相同文件，则跳过（避免重复撞平台上传）。"""
+        if not skip_first_file:
+            return False
+        return candidate.file == skip_first_file and (
+            (
+                candidate.action == "media"
+                and candidate.media_type == component.media_type
+            )
+            or (component.kind == "tail" and candidate.action == "file")
+        )
+
     async def _send_component_fallback_candidates(
         self,
         session_id: str,
@@ -957,16 +1043,10 @@ class DefaultMessageSender:
         for candidate in candidates:
             if candidate.action == "link":
                 continue
-            if (
-                skip_first_file
-                and candidate.file == skip_first_file
-                and (
-                    (
-                        candidate.action == "media"
-                        and candidate.media_type == component.media_type
-                    )
-                    or (component.kind == "tail" and candidate.action == "file")
-                )
+            if self._should_skip_fallback_candidate(
+                candidate,
+                component,
+                skip_first_file=skip_first_file,
             ):
                 continue
             result = await self._send_media_candidate(
@@ -1121,9 +1201,6 @@ class DefaultMessageSender:
                 )
         return components
 
-    def _chain_from_components(self, components: list[MessageComponent]) -> list:
-        return self._formatter._components_to_chain(components)
-
     @staticmethod
     def _record_failed_url(
         failed_urls: list[str],
@@ -1134,20 +1211,6 @@ class DefaultMessageSender:
             return
         if url and url not in failed_urls:
             failed_urls.append(url)
-
-    @staticmethod
-    def _record_failed_media_fallback(
-        failed_urls: list[str],
-        failed_fallbacks: list[str],
-        component: MessageComponent,
-    ) -> None:
-        url = str(component.original_url or "").strip()
-        fallback = str(component.fallback_text or "").strip()
-        if fallback and is_generated_media_url(url):
-            if fallback not in failed_fallbacks:
-                failed_fallbacks.append(fallback)
-            return
-        DefaultMessageSender._record_failed_url(failed_urls, component)
 
     @staticmethod
     def _merge_send_failure(
@@ -1175,96 +1238,6 @@ class DefaultMessageSender:
             detail=detail,
             http_status=first.http_status,
         )
-
-    @staticmethod
-    def _counts_degraded_media_delivery_as_success(platform: str | None) -> bool:
-        """QQ Official 降级已送达时不应触发轮询补推。"""
-        return str(platform or "").strip().lower() in QQ_OFFICIAL_PLATFORMS
-
-    async def _send_components_media_first(
-        self,
-        session_id: str,
-        components: list[MessageComponent],
-        *,
-        default_text: str = "",
-        use_markdown: bool | None = None,
-        prepared_media_by_url: dict[str, PreparedMedia] | None = None,
-        platform: str | None = None,
-    ) -> SendResult:
-        media_components = [
-            component for component in components if self._is_media_component(component)
-        ]
-        text_components = [
-            component for component in components if component.kind == "text"
-        ]
-
-        failed_urls: list[str] = []
-        failed_fallbacks: list[str] = []
-        failures: list[SendResult] = []
-        degraded_delivery_ok = False
-
-        for component in media_components:
-            chain = self._component_to_chain(component)
-            if not chain:
-                continue
-            result = await self._send_chain(
-                session_id,
-                chain,
-                use_markdown=use_markdown,
-            )
-            if not result.ok:
-                self._merge_send_failure(
-                    failures,
-                    result,
-                    stage=f"send_{component.media_type or component.kind}",
-                )
-                fallback = await self._send_component_fallback_candidates(
-                    session_id,
-                    component,
-                    prepared_media_by_url=prepared_media_by_url,
-                    platform=platform,
-                    skip_first_file=component.file,
-                    use_markdown=use_markdown,
-                )
-                failures.extend(fallback.failures)
-                if fallback.ok:
-                    degraded_delivery_ok = True
-                else:
-                    self._record_failed_media_fallback(
-                        failed_urls,
-                        failed_fallbacks,
-                        component,
-                    )
-
-        text = "\n".join(
-            component.text for component in text_components if component.text
-        ).strip()
-        if not text:
-            text = default_text
-        text = self._append_text_fallbacks(text, failed_fallbacks)
-        text = self._append_failed_links(text, failed_urls)
-
-        if text:
-            from astrbot.api.message_components import Plain
-
-            result = await self._send_chain(
-                session_id,
-                [Plain(text)],
-                use_markdown=use_markdown,
-            )
-            if result.ok and (failed_urls or failed_fallbacks):
-                degraded_delivery_ok = True
-            self._merge_send_failure(failures, result, stage="send_text")
-        elif not media_components:
-            return SendResult(ok=False, detail="empty_message")
-
-        if (
-            failures
-            and degraded_delivery_ok
-            and self._counts_degraded_media_delivery_as_success(platform)
-        ):
-            return SendResult(ok=True)
-        return self._partial_send_result(failures)
 
     @locked("'global_web'")
     async def _send_chain(
@@ -1312,23 +1285,23 @@ class DefaultMessageSender:
         request: SendRequest,
         context: MessageContext | None = None,
     ) -> SendResult:
-        """发送消息给用户（默认实现）
+        """统一发送骨架：准备媒体 → 组件 → 平台钩子 → 固定组链 → 发一条链 → 回退。
 
-        组件排序由 MessageChainFormatter 统一处理。
+        所有平台共用；平台差异通过钩子表达（顺序/拆分固定为 正文→媒体→尾 一条链）。
         """
-        effective_prepared: list[PreparedMedia] | None = None
+        effective_prepared = None
         cleanup_owned = request.prepared_media is None
         try:
             session_id = request.session_id
             platform = context.platform_name if context else ""
 
             effective_prepared = await self._prepare_effective_media(request, context)
+            failed_urls = (
+                self._collect_failed_urls(effective_prepared)
+                if effective_prepared
+                else []
+            )
 
-            failed_urls: list[str] = []
-            if effective_prepared:
-                failed_urls = self._collect_failed_urls(effective_prepared)
-
-            # 统一组件构造路径：_build_components 内完成文本降级与 generated fallback。
             components = self._build_components(
                 request,
                 effective_prepared,
@@ -1336,22 +1309,58 @@ class DefaultMessageSender:
                 failed_urls=failed_urls,
                 platform=platform,
             )
-            chain = self._formatter.build_chain_from_components(
+            prepared_media_by_url = {
+                pm.original_url: pm
+                for pm in (effective_prepared or [])
+                if pm.original_url
+            }
+            components = self._apply_first_send_candidates(
                 components,
+                prepared_media_by_url,
                 platform=platform,
             )
 
-            if not chain:
+            use_markdown = self._resolve_use_markdown(context, platform)
+            degraded = await self._maybe_degrade_before_send(
+                request,
+                components,
+                use_markdown=use_markdown,
+                platform=platform,
+            )
+            if degraded is not None:
+                return degraded
+
+            alternate = await self._maybe_route_alternate_channel(
+                request,
+                context,
+                effective_prepared,
+                components,
+                use_markdown=use_markdown,
+            )
+            if alternate is not None:
+                return alternate
+
+            payload = self._build_delivery_payload(components, platform=platform)
+            if not payload:
                 return SendResult(ok=False, detail="empty_message")
 
-            result = await self._send_chain(session_id, chain)
+            result = await self._send_chain(
+                session_id, payload, use_markdown=use_markdown
+            )
             if result.ok:
                 return result
-            return await self._retry_text_with_generated_fallbacks(request, result)
-
+            return await self._maybe_retry_after_failed_send(
+                request,
+                result,
+                components,
+                prepared_media_by_url,
+                use_markdown=use_markdown,
+            )
         except Exception as err:
             logger.error(
-                "Send to user failed: session=%s, error=%s", request.session_id, err
+                "Send to user failed: session=%s, error=%s",
+                request.session_id,
+                err,
             )
             return SendResult(
                 ok=False,

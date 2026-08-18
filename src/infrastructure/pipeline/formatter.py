@@ -47,9 +47,7 @@ class MessageChainFormatter:
         components: list[MessageComponent],
         platform: str = "",
     ) -> list:
-        """把平台无关组件转为最终消息链；Telegram 重排为 media → caption → tails。"""
-        if platform == "telegram":
-            return self._telegram_components_to_chain(components)
+        """把平台无关组件转为最终消息链。顺序统一为 正文 → 媒体 → 尾（sorter 已保证）。"""
         return self._components_to_chain(components)
 
     @staticmethod
@@ -100,42 +98,6 @@ class MessageChainFormatter:
                                 url=component.original_url,
                             )
                         )
-        return chain
-
-    # ------------------------------------------------------------------
-    # Telegram：media → caption（含失败链接）→ tails
-    # ------------------------------------------------------------------
-
-    def _telegram_components_to_chain(
-        self,
-        components: list[MessageComponent],
-    ) -> list:
-        """Telegram 消息链：media → Plain(caption) → tails"""
-        from astrbot.api.message_components import Plain
-
-        chain: list = []
-        has_media = False
-
-        for component in components:
-            if component.kind == "media":
-                has_media = True
-                chain.extend(self._components_to_chain([component]))
-
-        text_components = [
-            component for component in components if component.kind == "text"
-        ]
-        tail_components = [
-            component for component in components if component.kind == "tail"
-        ]
-
-        if has_media:
-            for component in text_components:
-                if component.text:
-                    chain.append(Plain(component.text))
-        else:
-            chain.extend(self._components_to_chain(text_components))
-
-        chain.extend(self._components_to_chain(tail_components))
         return chain
 
     # ------------------------------------------------------------------

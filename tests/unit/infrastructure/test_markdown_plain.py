@@ -86,3 +86,21 @@ def test_markdown_to_plain_plain_link_still_works():
 
     out = markdown_to_plain("[a](https://e.com)")
     assert out == "a (https://e.com)"
+
+
+def test_markdown_to_plain_dedups_url_when_link_text_is_url():
+    # 推送 footer 的 `via [url](url)` 降级后不应出现 `url (url)` 重复。
+    # 链接文本与 URL 相等与否是动态比较，与具体地址无关（示例 URL 仅作 fixture）。
+    text = "via [https://example.com/posts/42](https://example.com/posts/42)"
+    assert markdown_to_plain(text) == "via https://example.com/posts/42"
+
+    # 文本与 URL 不同时仍保留 `文本 (url)`，便于用户看到真实跳转地址。
+    assert markdown_to_plain("[点击查看](https://example.com/a)") == (
+        "点击查看 (https://example.com/a)"
+    )
+
+
+def test_markdown_to_plain_dedups_escaped_url_link_text():
+    # MarkdownV2 转义（如 `.`）经反转义后文本仍等于 URL，同样去重。
+    text = r"via [https://example\.com/posts/42](https://example\.com/posts/42)"
+    assert markdown_to_plain(text) == "via https://example.com/posts/42"
