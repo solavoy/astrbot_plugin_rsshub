@@ -26,14 +26,7 @@ export const Overview = defineComponent({
               @click="store.setOverviewRange(r.key)"
             >{{ r.label }}</button>
           </div>
-          <button
-            class="btn btn-icon"
-            type="button"
-            :class="{ 'is-loading': store.overviewChartsLoading }"
-            :disabled="store.overviewChartsLoading"
-            @click="store.loadOverview()"
-            title="刷新" aria-label="刷新"
-          >⟳</button>
+          <base-page-actions :store="store" />
         </div>
       </div>
 

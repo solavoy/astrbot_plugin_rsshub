@@ -107,13 +107,6 @@ export const store = reactive({
       default: break;
     }
   },
-  headerAdd() {
-    switch (this.activeTab) {
-      case 'subs': this.openAddPanel(); break;
-      case 'lists': this.openListCreatePanel(); break;
-      default: break;
-    }
-  },
   headerRefresh() {
     switch (this.activeTab) {
       case 'overview': this.loadOverview(); break;

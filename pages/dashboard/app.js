@@ -46,18 +46,7 @@ async function init() {
     'data-management': DataManagement,
   };
 
-  const headerConfig = {
-    overview: { search: false, add: false },
-    subs: { search: true, add: true, searchPlaceholder: '搜索订阅…' },
-    feeds: { search: true, add: false, searchPlaceholder: '搜索 Feed…' },
-    users: { search: true, add: false, searchPlaceholder: '搜索用户…' },
-    lists: { search: false, add: true },
-    'push-history': { search: true, add: false, searchPlaceholder: '搜索推送历史…' },
-    settings: { search: false, add: false },
-    'data-management': { search: false, add: false },
-  };
-
-  const app = createApp(App, { store, pages, headerConfig });
+  const app = createApp(App, { store, pages });
   registerCommonComponents(app);
   app.mount('#app');
 }

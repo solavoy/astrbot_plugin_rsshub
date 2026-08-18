@@ -7,8 +7,11 @@ export const Users = defineComponent({
   template: `
     <section class="table-section">
       <div class="section-header">
-        <h2>用户列表</h2>
         <span class="section-count">共 {{ store.users.length }} 个</span>
+        <div class="section-header-actions">
+          <base-search-input v-model="store.usersKeyword" placeholder="搜索用户…" @search="store.applyUserSearch" />
+          <base-page-actions :store="store" />
+        </div>
       </div>
 
       <div class="subs-toolbar">

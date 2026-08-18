@@ -7,8 +7,11 @@ export const PushHistory = defineComponent({
   template: `
     <section class="table-section">
       <div class="section-header">
-        <h2>推送历史</h2>
         <span class="section-count">共 {{ store.pushHistoryTotal }} 条</span>
+        <div class="section-header-actions">
+          <base-search-input v-model="store.pushHistoryKeyword" placeholder="搜索推送历史…" @search="store.applyHistorySearch" />
+          <base-page-actions :store="store" />
+        </div>
       </div>
 
       <div class="subs-toolbar">

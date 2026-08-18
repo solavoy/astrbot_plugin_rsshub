@@ -6,6 +6,11 @@ export const Settings = defineComponent({
   name: 'Settings',
   template: `
     <section class="settings-shell narrow-page">
+      <div class="section-header">
+        <div class="section-header-actions">
+          <base-page-actions :store="store" />
+        </div>
+      </div>
       <base-skeleton v-if="store.pluginSettingsLoading" :count="4" />
       <div v-else-if="store.subscriptionDefaults" class="settings-form">
         <div class="panel-section">

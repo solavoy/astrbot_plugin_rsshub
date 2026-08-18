@@ -38,6 +38,41 @@ export function registerCommonComponents(app) {
     },
   }));
 
+  app.component('base-search-input', defineComponent({
+    name: 'BaseSearchInput',
+    template: `
+      <div class="page-search">
+        <input
+          class="page-search-input"
+          type="text"
+          :placeholder="placeholder"
+          :value="modelValue"
+          @input="onInput($event.target.value)"
+          @keyup.enter="immediate()"
+        />
+      </div>
+    `,
+    props: {
+      modelValue: { type: String, default: '' },
+      placeholder: { type: String, default: '搜索…' },
+    },
+    emits: ['update:modelValue', 'search'],
+    data() {
+      return { _timer: null };
+    },
+    methods: {
+      onInput(value) {
+        this.$emit('update:modelValue', value);
+        clearTimeout(this._timer);
+        this._timer = setTimeout(() => this.$emit('search', value.trim()), 300);
+      },
+      immediate() {
+        clearTimeout(this._timer);
+        this.$emit('search', (this.modelValue || '').trim());
+      },
+    },
+  }));
+
   app.component('base-skeleton', defineComponent({
     name: 'BaseSkeleton',
     template: `
@@ -48,6 +83,19 @@ export function registerCommonComponents(app) {
       </div>
     `,
     props: { count: { type: Number, default: 6 } },
+  }));
+
+  app.component('base-page-actions', defineComponent({
+    name: 'BasePageActions',
+    // 页级操作（刷新 + 主题切换），置于各页大卡片头部。
+    template: `
+      <button class="icon-btn" type="button" title="刷新" aria-label="刷新" @click="store.headerRefresh()">⟳</button>
+      <button class="icon-btn" type="button" :title="store.isDark ? '切换浅色' : '切换深色'" :aria-label="store.isDark ? '切换浅色' : '切换深色'" @click="store.toggleTheme()">
+        <span v-if="store.isDark">☀️</span>
+        <span v-else>🌙</span>
+      </button>
+    `,
+    props: { store: { type: Object, required: true } },
   }));
 
   app.component('base-toast', defineComponent({

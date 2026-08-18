@@ -13,15 +13,7 @@ export const App = defineComponent({
     <div class="dashboard-shell">
       <Sidebar :store="store" :nav-groups="navGroups" />
       <main class="dashboard-main">
-        <Topbar
-          :store="store"
-          :show-search="headerSearchable"
-          :show-add="headerAddable"
-          :search-placeholder="headerSearchPlaceholder"
-          @search="onSearch"
-          @add="onAdd"
-          @refresh="onRefresh"
-        />
+        <Topbar :store="store" />
         <div class="dashboard-content">
           <div v-if="store.loading" class="dashboard-loading">
             <base-skeleton :count="6" />
@@ -36,7 +28,6 @@ export const App = defineComponent({
   props: {
     store: { type: Object, required: true },
     pages: { type: Object, required: true },
-    headerConfig: { type: Object, default: () => ({}) },
   },
   data() {
     return { navGroups: NAV_GROUPS };
@@ -45,26 +36,6 @@ export const App = defineComponent({
     activeComponent() {
       const key = this.store.activeTab;
       return this.pages[key] || this.pages.overview;
-    },
-    headerSearchable() {
-      return !!this.headerConfig[this.store.activeTab]?.search;
-    },
-    headerAddable() {
-      return !!this.headerConfig[this.store.activeTab]?.add;
-    },
-    headerSearchPlaceholder() {
-      return this.headerConfig[this.store.activeTab]?.searchPlaceholder || '搜索…';
-    },
-  },
-  methods: {
-    onSearch(q) {
-      this.store.headerSearch(q);
-    },
-    onAdd() {
-      this.store.headerAdd();
-    },
-    onRefresh() {
-      this.store.headerRefresh();
     },
   },
 });

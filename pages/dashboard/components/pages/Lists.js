@@ -7,7 +7,11 @@ export const Lists = defineComponent({
   template: `
     <section class="table-section">
       <div class="section-header">
-        <h2>Lists 聚合推送</h2>
+        <span class="section-count">共 {{ store.lists.length }} 个</span>
+        <div class="section-header-actions">
+          <button class="btn btn-primary" type="button" @click="store.openListCreatePanel()">+ 添加</button>
+          <base-page-actions :store="store" />
+        </div>
       </div>
 
       <div class="grid-cards">

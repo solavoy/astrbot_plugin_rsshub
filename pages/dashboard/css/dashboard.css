@@ -1,5 +1,5 @@
 /* ===== 布局骨架（卡片式改版） / Layout Shell ===== */
-.dashboard-shell { height: 100vh; min-height: 0; display: grid; grid-template-columns: 220px minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); gap: 16px; }
+.dashboard-shell { height: 100vh; min-height: 0; display: grid; grid-template-columns: 220px minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); gap: 24px; }
 
 /* 侧边栏 */
 .sidebar {
@@ -85,9 +85,11 @@
 }
 .topbar-title { font-size: 20px; font-weight: 600; color: var(--text-primary); white-space: nowrap; flex: 0 0 auto; }
 .topbar-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.topbar-search {
-  min-width: 220px;
-  height: 36px;
+/* 页内搜索框（位于各页大卡片头部） */
+.page-search { display: flex; align-items: center; }
+.page-search-input {
+  width: min(100%, 240px);
+  height: 34px;
   padding: 0 12px;
   border: 1px solid var(--border-color);
   border-radius: var(--radius-md);
@@ -97,8 +99,8 @@
   outline: 0;
   transition: border-color var(--transition), box-shadow var(--transition);
 }
-.topbar-search:focus { border-color: var(--primary-color); box-shadow: 0 0 0 3px var(--primary-soft); }
-.topbar-search::placeholder { color: var(--text-tertiary); }
+.page-search-input:focus { border-color: var(--primary-color); box-shadow: 0 0 0 3px var(--primary-soft); }
+.page-search-input::placeholder { color: var(--text-tertiary); }
 .dashboard-loading { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 16px; }
 .subs-toolbar { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; flex-wrap: wrap; }
 .subs-batch { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
@@ -227,17 +229,17 @@
 .segmented-button { min-height: 30px; padding: 5px 10px; border: 0; border-radius: var(--radius-sm); background: transparent; color: var(--text-secondary); font-size: 12px; font-weight: 700; cursor: pointer; }
 .segmented-button:hover { color: var(--primary-hover); background: var(--primary-softer); }
 .segmented-button.active { color: var(--primary-hover); background: var(--card-bg); box-shadow: var(--shadow-card); }
-.overview-chart-grid { display: grid; grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr); grid-auto-rows: minmax(0, 1fr); gap: 16px; margin-top: 16px; flex: 1 1 auto; min-height: 0; }
-.overview-chart-panel { min-width: 0; min-height: 0; display: flex; flex-direction: column; border: 1px solid var(--border-color); border-radius: var(--radius-xl); background: var(--card-bg); padding: 16px; box-shadow: var(--shadow-card); }
+.overview-chart-grid { display: grid; grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr); gap: 16px; margin-top: 16px; flex: 1 1 auto; min-height: 0; align-content: start; }
+.overview-chart-panel { min-width: 0; min-height: 0; border: 1px solid var(--border-color); border-radius: var(--radius-xl); background: var(--card-bg); padding: 16px; box-shadow: var(--shadow-card); }
 .overview-chart-panel-wide { grid-column: 1 / -1; }
 .overview-chart-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 16px; }
 .overview-chart-head h3 { margin: 0; color: var(--text-primary); font-size: 15px; font-weight: 700; }
 .overview-chart-meta { min-width: 0; max-width: min(100%, 420px); color: var(--text-tertiary); font-size: 12px; line-height: 1.45; text-align: right; overflow-wrap: anywhere; }
-.overview-chart-canvas { position: relative; width: 100%; height: auto; min-width: 0; min-height: 220px; flex: 1 1 auto; }
-.overview-chart-panel-wide .overview-chart-canvas { min-height: 260px; }
-.overview-chart-canvas-small { min-height: 200px; }
+.overview-chart-canvas { position: relative; width: 100%; height: 280px; min-width: 0; }
+.overview-chart-panel-wide .overview-chart-canvas { height: 340px; }
+.overview-chart-canvas-small { height: 220px; }
 .overview-doughnut-layout { display: grid; grid-template-columns: minmax(190px, 0.8fr) minmax(260px, 1.2fr); gap: 18px; align-items: center; }
-.overview-doughnut-canvas { height: auto; min-height: 260px; flex: 1 1 auto; }
+.overview-doughnut-canvas { height: 300px; }
 .overview-share-legend { min-width: 0; display: grid; gap: 12px; align-content: center; }
 .legend-pager { display: flex; align-items: center; justify-content: center; gap: 8px; color: var(--text-secondary); font-size: 13px; }
 .legend-page-btn { width: 26px; height: 26px; border: 0; border-radius: var(--radius-full); background: transparent; color: var(--primary-color); cursor: pointer; }

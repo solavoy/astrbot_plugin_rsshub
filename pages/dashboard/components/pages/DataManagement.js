@@ -10,9 +10,8 @@ export const DataManagement = defineComponent({
       <div v-else-if="store.dataManagementOverview" class="settings-form">
         <div class="panel-section">
           <div class="section-header section-header-bordered">
-            <h2>数据管理</h2>
             <div class="section-header-actions">
-              <button class="btn btn-secondary btn-small" type="button" @click="store.loadDataManagement()">刷新</button>
+              <base-page-actions :store="store" />
               <button class="btn btn-secondary btn-small" type="button" @click="store.handleClearCache()">清理缓存</button>
               <button class="btn btn-danger btn-small" type="button" @click="store.handleClearExports()">清空导出</button>
             </div>
