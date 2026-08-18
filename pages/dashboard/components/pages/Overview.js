@@ -15,7 +15,6 @@ export const Overview = defineComponent({
   template: `
     <section class="overview-page">
       <div class="section-header">
-        <h2>总览</h2>
         <div class="section-header-actions">
           <div class="segmented-control" role="group" aria-label="图表时间范围">
             <button

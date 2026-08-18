@@ -8,9 +8,6 @@ export const Lists = defineComponent({
     <section class="table-section">
       <div class="section-header">
         <h2>Lists 聚合推送</h2>
-        <div class="section-actions">
-          <button class="btn btn-primary btn-small" type="button" @click="store.openListCreatePanel()">新建 List</button>
-        </div>
       </div>
 
       <div class="grid-cards">

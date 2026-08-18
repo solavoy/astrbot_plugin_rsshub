@@ -55,7 +55,7 @@ export const Subscriptions = defineComponent({
             <span v-if="sub.list_id" class="badge badge-active">Lists</span>
             <span v-else class="badge badge-neutral">即时推送</span>
             <div class="card-actions">
-              <button class="btn btn-text btn-action" type="button" @click.stop="openEdit(sub)">编辑</button>
+              <button class="btn btn-text btn-action" type="button" @click.stop="store.openSubEditPanel(sub)">编辑</button>
               <button class="btn btn-text btn-action danger" type="button" @click.stop="removeSub(sub)">删除</button>
             </div>
           </div>
@@ -89,6 +89,32 @@ export const Subscriptions = defineComponent({
           </div>
         </div>
       </div>
+
+      <!-- 编辑订阅面板 -->
+      <div class="panel-backdrop" v-if="store.subEditPanelVisible" @click.self="store.closeSubEditPanel()">
+        <div class="panel-shell">
+          <div class="panel-header">
+            <h3>编辑订阅</h3>
+            <button class="btn btn-text" type="button" @click="store.closeSubEditPanel()">关闭</button>
+          </div>
+          <div class="panel-body form-layout">
+            <div class="setting-row"><span class="setting-label">目标会话</span><input class="select-input" type="text" v-model="store.subEditForm.target_session" placeholder="如：telegram:UserMessage:123" /></div>
+            <div class="setting-row"><span class="setting-label">平台</span><input class="select-input" type="text" v-model="store.subEditForm.platform_name" placeholder="如：telegram" /></div>
+            <div class="setting-row"><span class="setting-label">更新间隔（分钟）</span><input class="select-input" type="number" v-model.number="store.subEditForm.interval" min="0" placeholder="0=继承" /></div>
+            <div class="setting-row"><span class="setting-label">状态</span><select class="select-input" v-model.number="store.subEditForm.state"><option :value="1">启用</option><option :value="0">停用</option></select></div>
+          </div>
+          <div class="panel-footer">
+            <button class="btn btn-secondary" type="button" @click="store.closeSubEditPanel()">取消</button>
+            <button
+              class="btn btn-primary"
+              :class="{ 'is-loading': store.subEditLoading }"
+              :disabled="store.subEditLoading"
+              type="button"
+              @click="store.saveSubEdit()"
+            >{{ store.subEditLoading ? '保存中…' : '保存' }}</button>
+          </div>
+        </div>
+      </div>
     </section>
   `,
   props: { store: { type: Object, required: true } },
@@ -96,9 +122,6 @@ export const Subscriptions = defineComponent({
     this.store.loadData();
   },
   methods: {
-    openEdit(sub) {
-      this.$emit('edit', sub);
-    },
     async removeSub(sub) {
       try {
         const { unsubscribe } = await import('../../js/api.js');
@@ -112,5 +135,4 @@ export const Subscriptions = defineComponent({
       }
     },
   },
-  emits: ['edit'],
 });

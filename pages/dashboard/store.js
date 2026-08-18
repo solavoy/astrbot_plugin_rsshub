@@ -167,6 +167,9 @@ export const store = reactive({
   addPanelVisible: false,
   addUrl: '',
   addPanelLoading: false,
+  subEditPanelVisible: false,
+  subEditForm: { id: 0, user_id: '', target_session: '', platform_name: '', interval: 0, state: 1 },
+  subEditLoading: false,
 
   async loadData() {
     try {
@@ -217,6 +220,45 @@ export const store = reactive({
 
   closeAddPanel() {
     this.addPanelVisible = false;
+  },
+
+  // ─── 订阅编辑面板 ─────────────────────────────────────────
+  openSubEditPanel(sub) {
+    this.subEditForm = {
+      id: sub.id,
+      user_id: sub.user_id || '',
+      target_session: sub.target_session || '',
+      platform_name: sub.platform_name || '',
+      interval: sub.interval && sub.interval > 0 ? sub.interval : 0,
+      state: sub.state ?? 1,
+    };
+    this.subEditPanelVisible = true;
+  },
+
+  closeSubEditPanel() {
+    this.subEditPanelVisible = false;
+  },
+
+  async saveSubEdit() {
+    const f = this.subEditForm;
+    if (!f.id) return;
+    try {
+      const { updateSubscription } = await import('./js/api.js');
+      this.subEditLoading = true;
+      await updateSubscription(f.id, {
+        target_session: String(f.target_session || '').trim(),
+        platform_name: String(f.platform_name || '').trim(),
+        interval: Number(f.interval) || 0,
+        state: Number(f.state) === 1 ? 1 : 0,
+      }, f.user_id);
+      this.subEditLoading = false;
+      this.closeSubEditPanel();
+      this.showToast('已更新订阅', 'success');
+      this.loadData();
+    } catch (err) {
+      this.subEditLoading = false;
+      this.showToast(`更新失败: ${err.message}`, 'error');
+    }
   },
 
   async submitAdd() {

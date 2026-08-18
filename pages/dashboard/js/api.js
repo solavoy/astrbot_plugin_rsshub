@@ -2,10 +2,18 @@
 
 import { requireBridge } from './bridge.js';
 
-function toBridgePayload(value) {
+export function toBridgePayload(value) {
   if (value === undefined || value === null) return {};
-  if (typeof value === 'object' && !Array.isArray(value)) return value;
-  return { value };
+  // Vue reactive 状态是 Proxy，postMessage 结构化克隆会抛
+  // "could not be cloned"；JSON 归一化为普通对象再交给 bridge。
+  let plain;
+  try {
+    plain = JSON.parse(JSON.stringify(value));
+  } catch {
+    plain = value;
+  }
+  if (typeof plain === 'object' && !Array.isArray(plain)) return plain;
+  return { value: plain };
 }
 
 function normalizeFilterValue(value) {
