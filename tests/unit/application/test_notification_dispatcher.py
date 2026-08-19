@@ -1040,10 +1040,10 @@ async def test_dispatch_ignores_layout_and_formats_markdown_with_length_limit():
     # original 排版已移除：layout 只承载 generated 媒体映射，不参与正文排版。
     assert request.layout is not None
     assert "**Title**" in request.message
-    assert request.media == [
-        ("image", "https://example.com/a.jpg"),
-        ("file", "https://example.com/report.pdf"),
-    ]
+    # 统一内联：媒体并入 markdown 正文，不再作为独立媒体组件传递。
+    assert request.media in (None, [])
+    assert "![图片](https://example.com/a.jpg)" in request.message
+    assert "[file](https://example.com/report.pdf)" in request.message
 
 
 @pytest.mark.asyncio
@@ -1908,7 +1908,7 @@ async def test_dispatch_pending_retries_reuses_agent_history_without_subscriptio
 
 
 @pytest.mark.asyncio
-async def test_dispatch_auto_mode_prefers_telegraph_when_multiple_media(monkeypatch):
+async def test_dispatch_inlines_multiple_media_into_markdown(monkeypatch):
     sender = FakeSender()
     sub = Subscription(
         id=1,
@@ -1955,11 +1955,12 @@ async def test_dispatch_auto_mode_prefers_telegraph_when_multiple_media(monkeypa
     )
 
     assert stats["success"] == 1
-    assert called["kwargs"]["media_items"] == [
-        ("image", "https://example.com/1.jpg"),
-        ("video", "https://example.com/2.mp4"),
-    ]
+    # 统一内联：媒体并入 markdown 正文，不再作为独立组件带给 sender（Telegraph 基于
+    # 媒体数量的路由随之停用，待配置驱动的平台差异化恢复）。
+    assert called["kwargs"]["media_items"] in (None, [])
     assert called["kwargs"]["send_mode"] == 0
+    assert "![图片](https://example.com/1.jpg)" in called["kwargs"]["content"]
+    assert "[video](https://example.com/2.mp4)" in called["kwargs"]["content"]
 
 
 @pytest.mark.asyncio

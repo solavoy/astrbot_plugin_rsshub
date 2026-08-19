@@ -46,6 +46,7 @@ from ...shared.constants import (
     SEND_MODE_LINK_ONLY,
 )
 from ..ports import MessageContext, MessageSenderProvider, SendRequest
+from .platform_send_profile import build_inline_media_markdown, profile_for_platform
 from .session_push_queue import PushJob, SessionPushQueue
 
 logger = get_logger()
@@ -730,6 +731,29 @@ class NotificationDispatcher:
                             entry_title=effective_title,
                             entry_link=effective_link,
                         )
+                        effective_media_urls = None
+                        effective_media_items = None
+
+                    # 统一 markdown 推送：媒体内联进正文（`![](url)` / `[type](url)`），
+                    # 不再作为独立媒体组件下载发送。按平台画像决定（当前统一内联）。
+                    if (
+                        effective_options.display_media
+                        and effective_send_mode != SEND_MODE_LINK_ONLY
+                        and profile_for_platform(
+                            str(sub.platform_name or "").strip()
+                        ).inline_media_as_markdown
+                    ):
+                        inline_pairs = normalize_media_items(
+                            media_urls=effective_media_urls,
+                            media_items=effective_media_items,
+                        )
+                        inline_links = build_inline_media_markdown(inline_pairs)
+                        if inline_links:
+                            effective_content = (
+                                f"{effective_content}\n\n{inline_links}"
+                                if effective_content
+                                else inline_links
+                            )
                         effective_media_urls = None
                         effective_media_items = None
 
