@@ -5,8 +5,9 @@ const { defineComponent } = window.Vue;
 export const Settings = defineComponent({
   name: 'Settings',
   template: `
-    <section class="settings-shell narrow-page">
+    <section class="settings-shell">
       <div class="section-header">
+        <h2 class="section-title">{{ store.pageTitle() }}</h2>
         <div class="section-header-actions">
           <base-page-actions :store="store" />
         </div>

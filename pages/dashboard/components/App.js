@@ -1,24 +1,22 @@
-// 根组件：布局骨架（侧边栏 + 头部 + 内容区）。
+// 根组件：纯左右布局（左侧选项卡片 + 右侧内容卡片），无顶部条。
+// 各页标题/操作均在右侧大卡片头部内。
 
 const { defineComponent } = window.Vue;
 
 import { Sidebar } from './Sidebar.js';
-import { Topbar } from './Topbar.js';
 import { NAV_GROUPS } from '../store.js';
 
 export const App = defineComponent({
   name: 'App',
-  components: { Sidebar, Topbar },
+  components: { Sidebar },
   template: `
     <div class="dashboard-shell">
       <Sidebar :store="store" :nav-groups="navGroups" />
       <main class="dashboard-main">
-        <Topbar :store="store" />
         <div class="dashboard-content">
-          <div v-if="store.loading" class="dashboard-loading">
-            <base-skeleton :count="6" />
-          </div>
-          <component v-else :is="activeComponent" :store="store" />
+          <keep-alive>
+            <component :is="activeComponent" :store="store" />
+          </keep-alive>
         </div>
       </main>
       <base-toast :store="store" />

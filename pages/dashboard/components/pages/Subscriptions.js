@@ -7,7 +7,10 @@ export const Subscriptions = defineComponent({
   template: `
     <section class="table-section">
       <div class="section-header">
-        <span class="section-count">共 {{ store.subs.length }} 个</span>
+        <div class="section-header-titles">
+          <h2 class="section-title">{{ store.pageTitle() }}</h2>
+          <span class="section-count">共 {{ store.subs.length }} 个</span>
+        </div>
         <div class="section-header-actions">
           <base-search-input v-model="store.subsKeyword" placeholder="搜索订阅…" @search="store.applySubSearch" />
           <button class="btn btn-primary" type="button" @click="store.openAddPanel()">+ 添加</button>

@@ -5,11 +5,12 @@ const { defineComponent } = window.Vue;
 export const DataManagement = defineComponent({
   name: 'DataManagement',
   template: `
-    <section class="settings-shell narrow-page">
+    <section class="settings-shell">
       <base-skeleton v-if="store.dataManagementLoading" :count="4" />
       <div v-else-if="store.dataManagementOverview" class="settings-form">
         <div class="panel-section">
           <div class="section-header section-header-bordered">
+            <h2 class="section-title">{{ store.pageTitle() }}</h2>
             <div class="section-header-actions">
               <base-page-actions :store="store" />
               <button class="btn btn-secondary btn-small" type="button" @click="store.handleClearCache()">清理缓存</button>

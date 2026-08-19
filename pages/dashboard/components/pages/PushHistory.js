@@ -7,7 +7,10 @@ export const PushHistory = defineComponent({
   template: `
     <section class="table-section">
       <div class="section-header">
-        <span class="section-count">共 {{ store.pushHistoryTotal }} 条</span>
+        <div class="section-header-titles">
+          <h2 class="section-title">{{ store.pageTitle() }}</h2>
+          <span class="section-count">共 {{ store.pushHistoryTotal }} 条</span>
+        </div>
         <div class="section-header-actions">
           <base-search-input v-model="store.pushHistoryKeyword" placeholder="搜索推送历史…" @search="store.applyHistorySearch" />
           <base-page-actions :store="store" />
@@ -24,11 +27,6 @@ export const PushHistory = defineComponent({
           <option value="skipped">已跳过</option>
           <option value="stopped">已停止</option>
         </select>
-        <div v-if="store.pushHistoryTotal > store.pushHistoryPageSize" class="pagination-actions">
-          <button class="btn btn-secondary btn-small" :disabled="store.pushHistoryPage <= 1" @click="store.historyPrevPage()">上一页</button>
-          <span class="page-indicator">{{ store.pushHistoryPage }} / {{ totalPages }}</span>
-          <button class="btn btn-secondary btn-small" :disabled="store.pushHistoryPage * store.pushHistoryPageSize >= store.pushHistoryTotal" @click="store.historyNextPage()">下一页</button>
-        </div>
       </div>
 
       <div class="table-card">
@@ -66,18 +64,52 @@ export const PushHistory = defineComponent({
           </table>
         </div>
       </div>
+      <div class="history-load-more">
+        <span v-if="store.pushHistoryLoadingMore">加载中…</span>
+        <span v-else-if="store.pushHistory.length && !hasMore">已是全部</span>
+      </div>
     </section>
   `,
   props: { store: { type: Object, required: true } },
+  created() {
+    this._active = false;
+  },
   mounted() {
     this.store.loadPushHistory();
+    this._scrollEl = this.$el.closest('.dashboard-content');
+    this._onScroll = () => this.handleScroll();
+    if (this._scrollEl) {
+      this._scrollEl.addEventListener('scroll', this._onScroll, { passive: true });
+    }
+  },
+  activated() {
+    this._active = true;
+  },
+  deactivated() {
+    this._active = false;
+  },
+  beforeUnmount() {
+    if (this._scrollEl) {
+      this._scrollEl.removeEventListener('scroll', this._onScroll);
+    }
   },
   computed: {
-    totalPages() {
-      return Math.max(1, Math.ceil(this.store.pushHistoryTotal / this.store.pushHistoryPageSize));
+    hasMore() {
+      return (
+        this.store.pushHistoryPage * this.store.pushHistoryPageSize <
+        this.store.pushHistoryTotal
+      );
     },
   },
   methods: {
+    handleScroll() {
+      if (!this._active) return;
+      const el = this._scrollEl;
+      if (!el || !this.hasMore || this.store.pushHistoryLoadingMore) return;
+      if (el.scrollTop + el.clientHeight >= el.scrollHeight - 150) {
+        this.store.loadPushHistoryMore();
+      }
+    },
     statusClass(status) {
       const map = {
         success: 'badge-active',

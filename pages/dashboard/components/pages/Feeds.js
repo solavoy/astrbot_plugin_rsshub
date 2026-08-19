@@ -7,7 +7,10 @@ export const Feeds = defineComponent({
   template: `
     <section class="table-section">
       <div class="section-header">
-        <span class="section-count">共 {{ store.feeds.length }} 个</span>
+        <div class="section-header-titles">
+          <h2 class="section-title">{{ store.pageTitle() }}</h2>
+          <span class="section-count">共 {{ store.feeds.length }} 个</span>
+        </div>
         <div class="section-header-actions">
           <base-search-input v-model="store.feedsKeyword" placeholder="搜索 Feed…" @search="store.applyFeedSearch" />
           <base-page-actions :store="store" />

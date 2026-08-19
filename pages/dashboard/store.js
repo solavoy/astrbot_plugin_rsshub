@@ -641,6 +641,7 @@ export const store = reactive({
   // ─── 推送历史 ─────────────────────────────────────────
   pushHistory: [],
   pushHistoryLoading: false,
+  pushHistoryLoadingMore: false,
   pushHistoryTotal: 0,
   pushHistoryPage: 1,
   pushHistoryPageSize: 20,
@@ -678,17 +679,26 @@ export const store = reactive({
     this.loadPushHistory();
   },
 
-  historyPrevPage() {
-    if (this.pushHistoryPage > 1) {
-      this.pushHistoryPage -= 1;
-      this.loadPushHistory();
-    }
-  },
-
-  historyNextPage() {
-    if (this.pushHistoryPage * this.pushHistoryPageSize < this.pushHistoryTotal) {
-      this.pushHistoryPage += 1;
-      this.loadPushHistory();
+  async loadPushHistoryMore() {
+    if (this.pushHistoryLoading || this.pushHistoryLoadingMore) return;
+    if (this.pushHistoryPage * this.pushHistoryPageSize >= this.pushHistoryTotal) return;
+    this.pushHistoryPage += 1;
+    this.pushHistoryLoadingMore = true;
+    try {
+      const { getPushHistory } = await import('./js/api.js');
+      const result = await getPushHistory({
+        page: this.pushHistoryPage,
+        page_size: this.pushHistoryPageSize,
+        status: this.pushHistoryStatus || undefined,
+        keyword: this.pushHistoryKeyword || undefined,
+      });
+      const items = result && result.items ? result.items : [];
+      this.pushHistory = this.pushHistory.concat(items);
+      if (result && result.total) this.pushHistoryTotal = result.total;
+      this.pushHistoryLoadingMore = false;
+    } catch (err) {
+      this.pushHistoryLoadingMore = false;
+      this.showToast(`加载更多推送历史失败: ${err.message}`, 'error');
     }
   },
 

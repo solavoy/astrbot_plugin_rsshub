@@ -7,7 +7,10 @@ export const Lists = defineComponent({
   template: `
     <section class="table-section">
       <div class="section-header">
-        <span class="section-count">共 {{ store.lists.length }} 个</span>
+        <div class="section-header-titles">
+          <h2 class="section-title">{{ store.pageTitle() }}</h2>
+          <span class="section-count">共 {{ store.lists.length }} 个</span>
+        </div>
         <div class="section-header-actions">
           <button class="btn btn-primary" type="button" @click="store.openListCreatePanel()">+ 添加</button>
           <base-page-actions :store="store" />
